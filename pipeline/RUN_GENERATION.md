@@ -1,0 +1,120 @@
+# Full Generation Run Protocol
+
+This protocol is the project-level sequence for the command:
+
+```text
+сгенерируй карточки для упражнений из списка в файле <filename>
+```
+
+## Contract
+
+Both source branches are mandatory:
+
+- Amass BioMedCore through Codex MCP.
+- Life Science Research / NCBI through local `generate_cards.py`.
+
+The local Python pipeline does not call Amass directly. The Codex agent is responsible for the Amass MCP calls and for saving their results into `output/logs/amass_results.json`.
+
+## Steps
+
+### 1. Build Amass Query Plan
+
+```powershell
+python pipeline\amass_queries.py input\exercises.txt
+```
+
+Outputs:
+
+```text
+output/logs/amass_query_plan.json
+output/logs/amass_results.scaffold.json
+```
+
+### 2. Run Amass MCP Searches
+
+For each item in `amass_query_plan.json`:
+
+1. Run every query in `exercises[].queries`.
+2. Use tool `mcp__codex_apps__amass._search_amass_biomedcore_records`.
+3. Merge unique records per exercise by `pmid`, `doi`, `amassId`, and normalized title.
+4. Save the result as `output/logs/amass_results.json`.
+
+Expected shape:
+
+```json
+{
+  "barbell_squat": {
+    "exercise_id": "barbell_squat",
+    "exercise_name": "barbell squat",
+    "russian_name": "barbell squat",
+    "aliases": [],
+    "queries_used": ["..."],
+    "results": []
+  }
+}
+```
+
+Each `results` item should preserve Amass fields such as:
+
+- `amassId`
+- `pmid`
+- `doi`
+- `title`
+- `abstract`
+- `authors`
+- `journal`
+- `publicationDate`
+- `citationCount`
+- `journalQualityJufo`
+- `hasFulltext`
+- `isRetracted`
+
+### 3. Run Source Staging And NCBI Merge
+
+```powershell
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
+```
+
+Outputs:
+
+```text
+output/exercise_cards/<exercise_id>.json
+output/sources/<exercise_id>.sources.json
+output/logs/<exercise_id>.log.json
+```
+
+### 4. Populate Biomechanics
+
+```powershell
+python pipeline\populate_card.py --all
+```
+
+This updates cards in:
+
+```text
+output/exercise_cards/
+```
+
+### 5. Verify
+
+At minimum:
+
+```powershell
+python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_queries.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
+```
+
+For a real run, also inspect:
+
+```text
+output/logs/generation_report.json
+output/sources/<exercise_id>.sources.json
+output/exercise_cards/<exercise_id>.json
+```
+
+## Failure Rules
+
+- Do not run `generate_cards.py` without `output/logs/amass_results.json`.
+- Do not treat NCBI-only output as complete.
+- If Amass returns no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
+- If no movement template matches in `populate_card.py`, leave the card as a staged draft and record the limitation.
+

@@ -20,11 +20,12 @@ The first implementation can start with `.txt` and `.md`, then add tabular forma
 Current CLI:
 
 ```powershell
+python pipeline\amass_queries.py input\exercises.txt
 python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
 python pipeline\populate_card.py --all
 ```
 
-Amass JSON is mandatory. The Codex agent should first run Amass MCP searches for the same exercise list, save the result JSON, and then run the local CLI so it can merge Amass with NCBI/PubMed results.
+Amass JSON is mandatory. The Codex agent should first build the query plan, run Amass MCP searches for the same exercise list, save the result JSON, and then run the local CLI so it can merge Amass with NCBI/PubMed results. See `pipeline/RUN_GENERATION.md`.
 
 Input line format:
 

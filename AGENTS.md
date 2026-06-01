@@ -40,16 +40,18 @@ Process exercises one at a time.
 For each exercise:
 
 1. Normalize the exercise name and known aliases.
-2. Run Amass and NCBI/PubMed searches as independent mandatory search branches.
-3. Normalize source records to the project source format.
-4. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
-5. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
-6. Fetch additional metadata or PMCID/open-access availability when useful.
-7. Generate a schema-valid `staged_draft` card and source ledger.
-8. Populate structured biomechanics with `pipeline/populate_card.py`.
-9. Keep template-derived claims marked as `biomechanical_inference` or `expert_inference`.
-10. Validate against `schemas/exercise_card.schema.json`.
-11. Save the card, source JSON, and generation log.
+2. Build an Amass query plan with `pipeline/amass_queries.py`.
+3. Run Amass MCP searches and save `output/logs/amass_results.json`.
+4. Run NCBI/PubMed source staging with `pipeline/generate_cards.py`.
+5. Normalize source records to the project source format.
+6. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
+7. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
+8. Fetch additional metadata or PMCID/open-access availability when useful.
+9. Generate a schema-valid `staged_draft` card and source ledger.
+10. Populate structured biomechanics with `pipeline/populate_card.py`.
+11. Keep template-derived claims marked as `biomechanical_inference` or `expert_inference`.
+12. Validate against `schemas/exercise_card.schema.json`.
+13. Save the card, source JSON, and generation log.
 
 ## Card Architecture
 
