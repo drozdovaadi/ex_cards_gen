@@ -45,10 +45,11 @@ For each exercise:
 4. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
 5. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
 6. Fetch additional metadata or PMCID/open-access availability when useful.
-7. Extract facts into the card schema, with `source_ids` attached to evidence-backed claims.
-8. Generate the card as JSON.
-9. Validate against `schemas/exercise_card.schema.json`.
-10. Save the card, source JSON, and generation log.
+7. Generate a schema-valid `staged_draft` card and source ledger.
+8. Populate structured biomechanics with `pipeline/populate_card.py`.
+9. Keep template-derived claims marked as `biomechanical_inference` or `expert_inference`.
+10. Validate against `schemas/exercise_card.schema.json`.
+11. Save the card, source JSON, and generation log.
 
 ## Card Architecture
 

@@ -21,6 +21,7 @@ Current CLI:
 
 ```powershell
 python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
+python pipeline\populate_card.py --all
 ```
 
 Amass JSON is mandatory. The Codex agent should first run Amass MCP searches for the same exercise list, save the result JSON, and then run the local CLI so it can merge Amass with NCBI/PubMed results.
@@ -140,6 +141,26 @@ Then validate:
 - taxonomy IDs are valid
 - source IDs referenced in the card exist in the source ledger
 - unsupported claims are not written as facts
+
+### 6.1 Populate Biomechanics
+
+After source staging, populate structured biomechanical fields:
+
+```powershell
+python pipeline\populate_card.py --exercise-id romanian_deadlift
+python pipeline\populate_card.py --all
+```
+
+The current population step uses controlled movement templates and source IDs from the merged Amass + NCBI ledger. Template-supported movement families include:
+
+- squat
+- split squat / lunge
+- Romanian deadlift / hinge
+- deadlift
+- bench press
+- hip thrust / glute bridge
+
+If no template matches, the card remains a staged draft and records the limitation explicitly.
 
 ### 7. Save Outputs
 
