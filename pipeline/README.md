@@ -17,6 +17,23 @@ Supported planned inputs:
 
 The first implementation can start with `.txt` and `.md`, then add tabular formats.
 
+Current CLI:
+
+```powershell
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
+```
+
+Amass JSON is mandatory. The Codex agent should first run Amass MCP searches for the same exercise list, save the result JSON, and then run the local CLI so it can merge Amass with NCBI/PubMed results.
+
+Input line format:
+
+```text
+Румынская тяга | Romanian deadlift | RDL
+barbell squat
+```
+
+When a Russian exercise name is used, add an English alias after `|` for better PubMed search quality.
+
 ## Per-Exercise Workflow
 
 ### 1. Normalize Exercise
@@ -32,7 +49,7 @@ Create a canonical exercise identity:
 
 ### 2. Search Evidence
 
-Run independent search branches:
+Run independent mandatory search branches:
 
 - Amass BioMedCore:
   - biomechanics
@@ -50,6 +67,8 @@ Run independent search branches:
   - PMC OA check by PMCID
 
 Consensus and Elicit are optional and should be used only when available.
+
+The current local CLI implements the NCBI/PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
 
 ### 3. Normalize Sources
 
@@ -77,6 +96,8 @@ Convert all backend records to one internal source shape:
 ```
 
 ### 4. Merge And Rank
+
+Amass and NCBI/PubMed results are merged into one source ledger. Amass is not treated as optional in the project pipeline.
 
 Deduplicate by:
 
@@ -137,4 +158,3 @@ output/logs/<exercise_id>.log.json
 - Do not treat lack of evidence as evidence of no effect.
 - Mark limited evidence clearly.
 - Separate direct evidence from biomechanical inference.
-

@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+output/exercise_cards/*
+!output/exercise_cards/.gitkeep
+output/sources/*
+!output/sources/.gitkeep
+output/logs/*
+!output/logs/.gitkeep
+

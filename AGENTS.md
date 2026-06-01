@@ -22,7 +22,7 @@ The expected output is one structured exercise card per exercise, plus source/au
 ## Evidence Rules
 
 - Use scientific sources before web sources.
-- Primary search backends:
+- Mandatory search backends for each exercise:
   - Amass BioMedCore for enriched biomedical literature records.
   - Life Science Research / NCBI Entrez for PubMed search, summaries, fetches, and PubMed-to-PMC linking.
   - Life Science Research / NCBI PMC for open-access availability by PMCID.
@@ -40,9 +40,9 @@ Process exercises one at a time.
 For each exercise:
 
 1. Normalize the exercise name and known aliases.
-2. Run Amass and NCBI/PubMed searches as independent search branches.
+2. Run Amass and NCBI/PubMed searches as independent mandatory search branches.
 3. Normalize source records to the project source format.
-4. Merge and deduplicate sources by PMID, DOI, PMCID, and normalized title.
+4. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
 5. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
 6. Fetch additional metadata or PMCID/open-access availability when useful.
 7. Extract facts into the card schema, with `source_ids` attached to evidence-backed claims.
@@ -70,4 +70,3 @@ output/
   logs/
     <exercise_id>.log.json
 ```
-
