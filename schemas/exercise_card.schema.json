@@ -1,0 +1,1281 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/exercise_card.schema.json",
+  "title": "Evidence-backed exercise card",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "type",
+    "status",
+    "schema_version",
+    "language",
+    "names",
+    "aliases",
+    "exercise_name",
+    "russian_name",
+    "exercise_id",
+    "exercise_family",
+    "variation",
+    "variation_of",
+    "related_variations",
+    "category",
+    "body_region",
+    "target_region",
+    "dominance_type",
+    "modality",
+    "equipment_required",
+    "compound_type",
+    "movement_patterns",
+    "force_vector",
+    "kinetic_chain",
+    "movement_planes",
+    "body_position",
+    "limb_pattern",
+    "technical_complexity",
+    "mobility_requirements",
+    "movement_pattern_details",
+    "primary_muscles",
+    "secondary_muscles",
+    "stabilizers",
+    "joint_actions",
+    "contraction_phase_emphasis",
+    "stimulus_phase_bias",
+    "muscle_stimulus_phase_bias",
+    "resistance_profile",
+    "relative_muscle_emphasis",
+    "fatigue_cost",
+    "sfr",
+    "biomechanics",
+    "common_errors",
+    "execution_steps",
+    "best_use",
+    "typical_rep_ranges",
+    "progression_options",
+    "when_to_avoid_or_modify",
+    "prerequisite_skill_mobility",
+    "supersets_trisets",
+    "variations",
+    "alternatives",
+    "safety",
+    "assumptions",
+    "limitations",
+    "not_supported_claims",
+    "evidence_summary",
+    "evidence_ledger",
+    "metadata"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "type": {
+      "const": "exercise_card"
+    },
+    "status": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/status"
+    },
+    "schema_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "language": {
+      "const": "ru"
+    },
+    "names": {
+      "type": "object",
+      "required": ["ru"],
+      "additionalProperties": false,
+      "properties": {
+        "ru": {
+          "type": "string",
+          "minLength": 1
+        },
+        "en": {
+          "type": "string"
+        }
+      }
+    },
+    "aliases": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "exercise_name": {
+      "type": "string"
+    },
+    "russian_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "exercise_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    },
+    "exercise_family": {
+      "type": "string"
+    },
+    "variation": {
+      "type": "string"
+    },
+    "variation_of": {
+      "type": ["string", "null"]
+    },
+    "related_variations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "category": {
+      "type": "string"
+    },
+    "body_region": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/body_region"
+    },
+    "target_region": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/target_region"
+    },
+    "dominance_type": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/dominance_type"
+    },
+    "modality": {
+      "$ref": "taxonomies/equipment.json#/$defs/modality"
+    },
+    "equipment_required": {
+      "type": "array",
+      "items": {
+        "$ref": "taxonomies/equipment.json#/$defs/equipment"
+      },
+      "uniqueItems": true
+    },
+    "compound_type": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/compound_type"
+    },
+    "movement_patterns": {
+      "type": "array",
+      "items": {
+        "$ref": "taxonomies/movement_patterns.json#/$defs/movement_pattern"
+      },
+      "uniqueItems": true
+    },
+    "force_vector": {
+      "$ref": "taxonomies/load_mechanics.json#/$defs/force_vector"
+    },
+    "kinetic_chain": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/kinetic_chain"
+    },
+    "movement_planes": {
+      "type": "array",
+      "items": {
+        "$ref": "taxonomies/exercise_classification.json#/$defs/movement_plane"
+      },
+      "uniqueItems": true
+    },
+    "body_position": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/body_position"
+    },
+    "limb_pattern": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/limb_pattern"
+    },
+    "technical_complexity": {
+      "$ref": "taxonomies/exercise_classification.json#/$defs/technical_complexity"
+    },
+    "mobility_requirements": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "movement_pattern_details": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_claim"
+      }
+    },
+    "primary_muscles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/muscle_summary"
+      }
+    },
+    "secondary_muscles": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/muscle_summary"
+      }
+    },
+    "stabilizers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/stabilizer_summary"
+      }
+    },
+    "joint_actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/joint_action_summary"
+      }
+    },
+    "contraction_phase_emphasis": {
+      "$ref": "taxonomies/movement_phases.json#/$defs/contraction_type"
+    },
+    "stimulus_phase_bias": {
+      "$ref": "#/$defs/stimulus_region"
+    },
+    "muscle_stimulus_phase_bias": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/muscle_stimulus_bias"
+      }
+    },
+    "resistance_profile": {
+      "$ref": "#/$defs/resistance_profile"
+    },
+    "relative_muscle_emphasis": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/relative_muscle_emphasis"
+      }
+    },
+    "fatigue_cost": {
+      "$ref": "#/$defs/fatigue_cost"
+    },
+    "sfr": {
+      "$ref": "#/$defs/sfr"
+    },
+    "biomechanics": {
+      "$ref": "#/$defs/biomechanics"
+    },
+    "common_errors": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/common_error"
+      }
+    },
+    "execution_steps": {
+      "$ref": "#/$defs/execution_steps"
+    },
+    "best_use": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "typical_rep_ranges": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "progression_options": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "when_to_avoid_or_modify": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "prerequisite_skill_mobility": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "supersets_trisets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/superset_triset"
+      }
+    },
+    "variations": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/variation"
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/alternative"
+      }
+    },
+    "safety": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "limitations": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "not_supported_claims": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_summary": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "evidence_ledger": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/evidence_claim"
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "generated_at",
+        "generator",
+        "schema_version"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "generated_at": {
+          "type": "string"
+        },
+        "generator": {
+          "type": "string"
+        },
+        "schema_version": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "source_ids": {
+      "type": "array",
+      "items": {
+        "$ref": "taxonomies/evidence.json#/$defs/source_id"
+      },
+      "uniqueItems": true
+    },
+    "evidence_claim": {
+      "type": "object",
+      "required": [
+        "claim",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "source_ids"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "claim": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "stimulus_region": {
+      "enum": [
+        "lengthened",
+        "mid_range",
+        "shortened",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "muscle_summary": {
+      "type": "object",
+      "required": [
+        "muscle_id",
+        "muscle_name_ru",
+        "muscle_group_id",
+        "role",
+        "phase_or_range",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "rationale",
+        "source_ids"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "muscle_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+        },
+        "muscle_name_ru": {
+          "type": "string"
+        },
+        "muscle_group_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_group_id"
+        },
+        "role": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_role"
+        },
+        "phase_or_range": {
+          "$ref": "#/$defs/stimulus_region"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "stabilizer_summary": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/muscle_summary"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "stabilization_role": {
+              "type": "string"
+            }
+          }
+        }
+      ]
+    },
+    "joint_action_summary": {
+      "type": "object",
+      "required": [
+        "joint_id",
+        "actions",
+        "primary_phases",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "joint_id": {
+          "$ref": "taxonomies/joints.json#/$defs/joint_id"
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/joint_actions.json#/$defs/joint_action"
+          },
+          "uniqueItems": true
+        },
+        "primary_phases": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/movement_phases.json#/$defs/phase_id"
+          },
+          "uniqueItems": true
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "muscle_stimulus_bias": {
+      "type": "object",
+      "required": [
+        "muscle_id",
+        "stimulus_region",
+        "rationale",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "muscle_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+        },
+        "stimulus_region": {
+          "$ref": "#/$defs/stimulus_region"
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "resistance_profile": {
+      "type": "object",
+      "required": [
+        "profile_type",
+        "peak_loading_region",
+        "explanation",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "assumptions",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "profile_type": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/resistance_profile_type"
+        },
+        "peak_loading_region": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/peak_loading_region"
+        },
+        "explanation": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "relative_muscle_emphasis": {
+      "type": "object",
+      "required": [
+        "muscle_id",
+        "relative_emphasis_score",
+        "score_type",
+        "confidence",
+        "confidence_score",
+        "rationale",
+        "source_ids"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "muscle_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+        },
+        "relative_emphasis_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "score_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "rationale": {
+          "type": "string"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "fatigue_cost": {
+      "type": "object",
+      "required": [
+        "local_fatigue",
+        "systemic_fatigue",
+        "technical_fatigue",
+        "axial_loading",
+        "stability_demand",
+        "overall_fatigue_cost",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "assumptions",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "local_fatigue": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "systemic_fatigue": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "technical_fatigue": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "axial_loading": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "stability_demand": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "overall_fatigue_cost": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/fatigue_level"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "sfr": {
+      "type": "object",
+      "required": [
+        "sfr_class",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "context",
+        "assumptions",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sfr_class": {
+          "$ref": "taxonomies/exercise_classification.json#/$defs/sfr_class"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "confidence_score": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "maximum": 100
+        },
+        "context": {
+          "type": "string"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "biomechanics": {
+      "type": "object",
+      "required": [
+        "movement_phases",
+        "joint_mechanics",
+        "muscle_roles_by_phase",
+        "external_load_mechanics",
+        "technique_variables",
+        "biomechanical_summary"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "movement_phases": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/movement_phase"
+          }
+        },
+        "joint_mechanics": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/joint_mechanics"
+          }
+        },
+        "muscle_roles_by_phase": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/muscle_role_by_phase"
+          }
+        },
+        "external_load_mechanics": {
+          "$ref": "#/$defs/external_load_mechanics"
+        },
+        "technique_variables": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/technique_variable"
+          }
+        },
+        "biomechanical_summary": {
+          "$ref": "#/$defs/evidence_claim"
+        }
+      }
+    },
+    "movement_phase": {
+      "type": "object",
+      "required": [
+        "phase_id",
+        "phase_type",
+        "name_ru",
+        "contraction_type",
+        "start_position",
+        "end_position",
+        "key_events",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "phase_id": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/phase_id"
+        },
+        "phase_type": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/phase_type"
+        },
+        "name_ru": {
+          "type": "string"
+        },
+        "contraction_type": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/contraction_type"
+        },
+        "start_position": {
+          "type": "string"
+        },
+        "end_position": {
+          "type": "string"
+        },
+        "key_events": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "joint_mechanics": {
+      "type": "object",
+      "required": [
+        "joint_id",
+        "phase_id",
+        "primary_actions",
+        "rom_characteristic",
+        "moment_demand",
+        "muscle_function",
+        "notes",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "joint_id": {
+          "$ref": "taxonomies/joints.json#/$defs/joint_id"
+        },
+        "phase_id": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/phase_id"
+        },
+        "primary_actions": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/joint_actions.json#/$defs/joint_action"
+          },
+          "uniqueItems": true
+        },
+        "rom_characteristic": {
+          "enum": [
+            "small",
+            "moderate",
+            "large",
+            "near_isometric",
+            "unclear"
+          ]
+        },
+        "moment_demand": {
+          "$ref": "taxonomies/muscles.json#/$defs/relative_demand"
+        },
+        "muscle_function": {
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "muscle_role_by_phase": {
+      "type": "object",
+      "required": [
+        "phase_id",
+        "muscle_id",
+        "muscle_name_ru",
+        "muscle_group_id",
+        "role",
+        "action",
+        "joint_action_context",
+        "contraction_type",
+        "muscle_length_state",
+        "relative_demand",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "phase_id": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/phase_id"
+        },
+        "muscle_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+        },
+        "muscle_name_ru": {
+          "type": "string"
+        },
+        "muscle_group_id": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_group_id"
+        },
+        "role": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_role"
+        },
+        "action": {
+          "type": "string"
+        },
+        "joint_action_context": {
+          "type": "string"
+        },
+        "contraction_type": {
+          "$ref": "taxonomies/movement_phases.json#/$defs/contraction_type"
+        },
+        "muscle_length_state": {
+          "$ref": "taxonomies/muscles.json#/$defs/muscle_length_state"
+        },
+        "relative_demand": {
+          "$ref": "taxonomies/muscles.json#/$defs/relative_demand"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "external_load_mechanics": {
+      "type": "object",
+      "required": [
+        "external_resistance_type",
+        "line_of_force",
+        "load_placement",
+        "main_moment_arms",
+        "vector_shift_effects",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "external_resistance_type": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/external_resistance_type"
+        },
+        "line_of_force": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/line_of_force"
+        },
+        "load_placement": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/load_placement"
+        },
+        "main_moment_arms": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/moment_arm_effect"
+          }
+        },
+        "vector_shift_effects": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/vector_shift_effect"
+          }
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "moment_arm_effect": {
+      "type": "object",
+      "required": [
+        "joint_id",
+        "condition",
+        "effect",
+        "affected_muscles"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "joint_id": {
+          "$ref": "taxonomies/joints.json#/$defs/joint_id"
+        },
+        "condition": {
+          "type": "string"
+        },
+        "effect": {
+          "type": "string"
+        },
+        "affected_muscles": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "vector_shift_effect": {
+      "type": "object",
+      "required": [
+        "change",
+        "effect_direction",
+        "affected_joints",
+        "affected_muscles",
+        "biomechanical_effect",
+        "muscle_bias_change",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "change": {
+          "type": "string"
+        },
+        "effect_direction": {
+          "$ref": "taxonomies/load_mechanics.json#/$defs/effect_direction"
+        },
+        "affected_joints": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/joints.json#/$defs/joint_id"
+          },
+          "uniqueItems": true
+        },
+        "affected_muscles": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+          },
+          "uniqueItems": true
+        },
+        "biomechanical_effect": {
+          "type": "string"
+        },
+        "muscle_bias_change": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "technique_variable": {
+      "type": "object",
+      "required": [
+        "variable_id",
+        "name_ru",
+        "description",
+        "biomechanical_effect",
+        "affected_joints",
+        "affected_muscles",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "variable_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9_]+$"
+        },
+        "name_ru": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "biomechanical_effect": {
+          "type": "string"
+        },
+        "affected_joints": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/joints.json#/$defs/joint_id"
+          },
+          "uniqueItems": true
+        },
+        "affected_muscles": {
+          "type": "array",
+          "items": {
+            "$ref": "taxonomies/muscles.json#/$defs/muscle_id"
+          },
+          "uniqueItems": true
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "common_error": {
+      "type": "object",
+      "required": [
+        "error",
+        "biomechanical_consequence",
+        "correction",
+        "severity",
+        "evidence_type",
+        "confidence",
+        "source_ids"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "error": {
+          "type": "string"
+        },
+        "biomechanical_consequence": {
+          "type": "string"
+        },
+        "correction": {
+          "type": "string"
+        },
+        "severity": {
+          "enum": [
+            "low",
+            "moderate",
+            "high",
+            "context_dependent"
+          ]
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        },
+        "source_ids": {
+          "$ref": "#/$defs/source_ids"
+        }
+      }
+    },
+    "execution_steps": {
+      "type": "object",
+      "required": [
+        "setup",
+        "execution",
+        "rom",
+        "breathing_bracing",
+        "tempo_control"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "setup": {
+          "$ref": "#/$defs/string_array"
+        },
+        "execution": {
+          "$ref": "#/$defs/string_array"
+        },
+        "rom": {
+          "$ref": "#/$defs/string_array"
+        },
+        "breathing_bracing": {
+          "$ref": "#/$defs/string_array"
+        },
+        "tempo_control": {
+          "$ref": "#/$defs/string_array"
+        }
+      }
+    },
+    "string_array": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "superset_triset": {
+      "type": "object",
+      "required": [
+        "format",
+        "combination",
+        "logic",
+        "fatigue_warning"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "format": {
+          "type": "string"
+        },
+        "combination": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "logic": {
+          "type": "string"
+        },
+        "fatigue_warning": {
+          "type": "string"
+        }
+      }
+    },
+    "variation": {
+      "type": "object",
+      "required": [
+        "name",
+        "primary_emphasis",
+        "mechanical_difference",
+        "when_to_choose",
+        "evidence_type",
+        "confidence"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "primary_emphasis": {
+          "type": "string"
+        },
+        "mechanical_difference": {
+          "type": "string"
+        },
+        "when_to_choose": {
+          "type": "string"
+        },
+        "evidence_type": {
+          "$ref": "taxonomies/evidence.json#/$defs/evidence_type"
+        },
+        "confidence": {
+          "$ref": "taxonomies/evidence.json#/$defs/confidence"
+        }
+      }
+    },
+    "alternative": {
+      "type": "object",
+      "required": [
+        "name",
+        "similarity",
+        "main_difference",
+        "when_to_choose"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "similarity": {
+          "type": "string"
+        },
+        "main_difference": {
+          "type": "string"
+        },
+        "when_to_choose": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}
+

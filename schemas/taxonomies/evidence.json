@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/evidence.json",
+  "title": "Evidence taxonomy",
+  "$defs": {
+    "evidence_type": {
+      "enum": [
+        "direct_evidence",
+        "indirect_evidence",
+        "biomechanical_inference",
+        "expert_heuristic",
+        "speculation",
+        "insufficient_evidence",
+        "reference_based",
+        "evidence_informed_estimate",
+        "expert_inference",
+        "unavailable"
+      ]
+    },
+    "confidence": {
+      "enum": [
+        "high",
+        "medium",
+        "low",
+        "very_low",
+        "unknown"
+      ]
+    },
+    "study_type": {
+      "enum": [
+        "systematic_review",
+        "meta_analysis",
+        "review",
+        "randomized_trial",
+        "controlled_trial",
+        "cross_sectional",
+        "cohort",
+        "case_series",
+        "biomechanics_lab",
+        "emg_study",
+        "kinematic_study",
+        "kinetic_study",
+        "musculoskeletal_modeling",
+        "simulation",
+        "expert_opinion",
+        "unclear"
+      ]
+    },
+    "evidence_domain": {
+      "enum": [
+        "biomechanics",
+        "kinematics",
+        "kinetics",
+        "emg",
+        "muscle_activation",
+        "hypertrophy",
+        "strength",
+        "fatigue",
+        "injury_risk",
+        "rehabilitation",
+        "training_adaptation",
+        "technique",
+        "equipment",
+        "unclear"
+      ]
+    },
+    "exercise_match": {
+      "enum": [
+        "direct",
+        "close_variation",
+        "same_family",
+        "indirect",
+        "not_relevant",
+        "unclear"
+      ]
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^SRC-[0-9]{3}$"
+    }
+  }
+}

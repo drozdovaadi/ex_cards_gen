@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/joint_actions.json",
+  "title": "Joint action taxonomy",
+  "$defs": {
+    "joint_action": {
+      "enum": [
+        "flexion",
+        "extension",
+        "abduction",
+        "adduction",
+        "internal_rotation",
+        "external_rotation",
+        "horizontal_abduction",
+        "horizontal_adduction",
+        "scapular_retraction",
+        "scapular_protraction",
+        "scapular_elevation",
+        "scapular_depression",
+        "scapular_upward_rotation",
+        "scapular_downward_rotation",
+        "plantar_flexion",
+        "dorsiflexion",
+        "pronation",
+        "supination",
+        "anti_flexion",
+        "anti_extension",
+        "anti_rotation",
+        "stabilization",
+        "unclear"
+      ]
+    }
+  }
+}

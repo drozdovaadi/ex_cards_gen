@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/movement_patterns.json",
+  "title": "Movement pattern taxonomy",
+  "$defs": {
+    "movement_pattern": {
+      "enum": [
+        "squat",
+        "hinge",
+        "lunge",
+        "split_squat",
+        "hip_thrust_bridge",
+        "horizontal_push",
+        "vertical_push",
+        "horizontal_pull",
+        "vertical_pull",
+        "shoulder_abduction",
+        "shoulder_flexion",
+        "shoulder_extension",
+        "elbow_flexion",
+        "elbow_extension",
+        "knee_extension",
+        "knee_flexion",
+        "hip_abduction",
+        "hip_adduction",
+        "plantar_flexion",
+        "trunk_flexion",
+        "trunk_extension",
+        "trunk_rotation",
+        "anti_rotation",
+        "anti_flexion",
+        "anti_extension",
+        "carry",
+        "unclear"
+      ]
+    }
+  }
+}

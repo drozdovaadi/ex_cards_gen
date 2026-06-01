@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/muscles.json",
+  "title": "Muscle taxonomy",
+  "$defs": {
+    "muscle_group_id": {
+      "enum": [
+        "back",
+        "shoulders",
+        "chest",
+        "triceps",
+        "biceps",
+        "glutes",
+        "hamstrings",
+        "adductors",
+        "quadriceps",
+        "calves",
+        "core",
+        "stabilizers_optional"
+      ]
+    },
+    "muscle_id": {
+      "enum": [
+        "lower_lats",
+        "upper_lats",
+        "teres_major",
+        "rhomboids",
+        "lower_trapezius",
+        "spinal_erectors",
+        "rear_deltoid",
+        "lateral_deltoid",
+        "front_deltoid",
+        "upper_trapezius",
+        "upper_chest",
+        "mid_chest",
+        "lower_chest",
+        "triceps_long_head",
+        "triceps_lateral_head",
+        "triceps_medial_head",
+        "biceps_brachii",
+        "brachialis",
+        "upper_gluteus_maximus",
+        "lower_gluteus_maximus",
+        "gluteus_medius",
+        "hamstrings",
+        "hip_adductors",
+        "vastus_lateralis",
+        "vastus_medialis",
+        "rectus_femoris",
+        "soleus",
+        "gastrocnemius",
+        "rectus_abdominis",
+        "obliques",
+        "transverse_abdominis",
+        "rotator_cuff",
+        "serratus_anterior",
+        "forearm_grip",
+        "tibialis_anterior"
+      ]
+    },
+    "muscle_role": {
+      "enum": [
+        "prime_mover",
+        "synergist",
+        "stabilizer",
+        "dynamic_stabilizer",
+        "antagonist_control",
+        "postural_support",
+        "fixator",
+        "minor_contributor",
+        "unclear"
+      ]
+    },
+    "muscle_length_state": {
+      "enum": [
+        "lengthening",
+        "shortening",
+        "near_isometric",
+        "lengthened",
+        "mid_range",
+        "shortened",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "relative_demand": {
+      "enum": [
+        "none",
+        "low",
+        "moderate",
+        "high",
+        "very_high",
+        "unclear"
+      ]
+    }
+  },
+  "muscle_groups": [
+    {
+      "group_id": "back",
+      "name_ru": "спина",
+      "muscles": [
+        { "muscle_id": "lower_lats", "name_ru": "низ широчайших" },
+        { "muscle_id": "upper_lats", "name_ru": "верх широчайших" },
+        { "muscle_id": "teres_major", "name_ru": "большая круглая" },
+        { "muscle_id": "rhomboids", "name_ru": "ромбовидные" },
+        { "muscle_id": "lower_trapezius", "name_ru": "нижняя часть трапеции" },
+        { "muscle_id": "spinal_erectors", "name_ru": "разгибатели позвоночника" }
+      ]
+    },
+    {
+      "group_id": "shoulders",
+      "name_ru": "плечи",
+      "muscles": [
+        { "muscle_id": "rear_deltoid", "name_ru": "задняя дельта" },
+        { "muscle_id": "lateral_deltoid", "name_ru": "средняя дельта" },
+        { "muscle_id": "front_deltoid", "name_ru": "передняя дельта" },
+        { "muscle_id": "upper_trapezius", "name_ru": "верхняя часть трапеции" }
+      ]
+    },
+    {
+      "group_id": "chest",
+      "name_ru": "грудь",
+      "muscles": [
+        { "muscle_id": "upper_chest", "name_ru": "верхняя часть груди" },
+        { "muscle_id": "mid_chest", "name_ru": "средняя часть груди" },
+        { "muscle_id": "lower_chest", "name_ru": "нижняя часть груди" }
+      ]
+    },
+    {
+      "group_id": "triceps",
+      "name_ru": "трицепс",
+      "muscles": [
+        { "muscle_id": "triceps_long_head", "name_ru": "длинная головка трицепса" },
+        { "muscle_id": "triceps_lateral_head", "name_ru": "латеральная головка трицепса" },
+        { "muscle_id": "triceps_medial_head", "name_ru": "медиальная головка трицепса" }
+      ]
+    },
+    {
+      "group_id": "biceps",
+      "name_ru": "бицепс",
+      "muscles": [
+        { "muscle_id": "biceps_brachii", "name_ru": "бицепс" },
+        { "muscle_id": "brachialis", "name_ru": "брахиалис" }
+      ]
+    },
+    {
+      "group_id": "glutes",
+      "name_ru": "ягодичные",
+      "muscles": [
+        { "muscle_id": "upper_gluteus_maximus", "name_ru": "верх большой ягодичной" },
+        { "muscle_id": "lower_gluteus_maximus", "name_ru": "нижняя часть большой ягодичной" },
+        { "muscle_id": "gluteus_medius", "name_ru": "средняя ягодичная" }
+      ]
+    },
+    {
+      "group_id": "hamstrings",
+      "name_ru": "задняя поверхность бедра",
+      "muscles": [
+        { "muscle_id": "hamstrings", "name_ru": "хамстринги" }
+      ]
+    },
+    {
+      "group_id": "adductors",
+      "name_ru": "приводящие бедра",
+      "muscles": [
+        { "muscle_id": "hip_adductors", "name_ru": "приводящие" }
+      ]
+    },
+    {
+      "group_id": "quadriceps",
+      "name_ru": "квадрицепс",
+      "muscles": [
+        { "muscle_id": "vastus_lateralis", "name_ru": "внешняя головка" },
+        { "muscle_id": "vastus_medialis", "name_ru": "внутренняя головка" },
+        { "muscle_id": "rectus_femoris", "name_ru": "прямая головка" }
+      ]
+    },
+    {
+      "group_id": "calves",
+      "name_ru": "икроножная",
+      "muscles": [
+        { "muscle_id": "soleus", "name_ru": "камбаловидная" },
+        { "muscle_id": "gastrocnemius", "name_ru": "икроножная" }
+      ]
+    },
+    {
+      "group_id": "core",
+      "name_ru": "кор",
+      "muscles": [
+        { "muscle_id": "rectus_abdominis", "name_ru": "прямая мышца живота" },
+        { "muscle_id": "obliques", "name_ru": "косые мышцы живота" },
+        { "muscle_id": "transverse_abdominis", "name_ru": "поперечная мышца живота" }
+      ]
+    },
+    {
+      "group_id": "stabilizers_optional",
+      "name_ru": "дополнительные стабилизаторы",
+      "muscles": [
+        { "muscle_id": "rotator_cuff", "name_ru": "вращательная манжета" },
+        { "muscle_id": "serratus_anterior", "name_ru": "передняя зубчатая" },
+        { "muscle_id": "forearm_grip", "name_ru": "мышцы предплечья и хвата" },
+        { "muscle_id": "tibialis_anterior", "name_ru": "передняя большеберцовая" }
+      ]
+    }
+  ]
+}

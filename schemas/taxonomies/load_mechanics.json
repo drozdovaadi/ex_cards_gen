@@ -1,0 +1,95 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/load_mechanics.json",
+  "title": "External load mechanics taxonomy",
+  "$defs": {
+    "force_vector": {
+      "enum": [
+        "vertical",
+        "horizontal",
+        "diagonal",
+        "rotational",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "external_resistance_type": {
+      "enum": [
+        "gravity",
+        "cable",
+        "elastic",
+        "machine_cam",
+        "lever_machine",
+        "flywheel",
+        "pneumatic",
+        "hydraulic",
+        "manual",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "line_of_force": {
+      "enum": [
+        "vertical_gravity",
+        "horizontal",
+        "diagonal",
+        "rotational",
+        "variable_arc",
+        "elastic_variable",
+        "machine_guided",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "load_placement": {
+      "enum": [
+        "anterior",
+        "posterior",
+        "lateral",
+        "overhead",
+        "hands",
+        "feet",
+        "torso",
+        "shoulders",
+        "hips",
+        "machine_pad",
+        "cable_attachment",
+        "mixed",
+        "not_applicable",
+        "unclear"
+      ]
+    },
+    "resistance_profile_type": {
+      "enum": [
+        "ascending",
+        "descending",
+        "bell_shaped",
+        "flat",
+        "variable",
+        "unclear"
+      ]
+    },
+    "peak_loading_region": {
+      "enum": [
+        "lengthened",
+        "mid_range",
+        "shortened",
+        "bottom",
+        "top",
+        "transition",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "effect_direction": {
+      "enum": [
+        "increases",
+        "decreases",
+        "shifts",
+        "no_clear_change",
+        "context_dependent",
+        "unclear"
+      ]
+    }
+  }
+}

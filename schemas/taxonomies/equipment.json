@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/equipment.json",
+  "title": "Equipment and modality taxonomy",
+  "$defs": {
+    "modality": {
+      "enum": [
+        "free_weight",
+        "bodyweight",
+        "machine",
+        "cable",
+        "smith_machine",
+        "band",
+        "suspension",
+        "landmine",
+        "sled",
+        "flywheel",
+        "manual_resistance",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "equipment": {
+      "enum": [
+        "barbell",
+        "dumbbell",
+        "kettlebell",
+        "ez_bar",
+        "cable_station",
+        "bench",
+        "incline_bench",
+        "decline_bench",
+        "machine",
+        "smith_machine",
+        "resistance_band",
+        "pull_up_bar",
+        "dip_bars",
+        "bodyweight_only",
+        "plates",
+        "rack",
+        "trap_bar",
+        "landmine_attachment",
+        "sled",
+        "flywheel_device",
+        "other",
+        "unclear"
+      ]
+    }
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/joints.json",
+  "title": "Joint taxonomy",
+  "$defs": {
+    "joint_id": {
+      "enum": [
+        "ankle",
+        "knee",
+        "hip",
+        "lumbar_spine",
+        "thoracic_spine",
+        "cervical_spine",
+        "scapulothoracic",
+        "glenohumeral",
+        "elbow",
+        "wrist"
+      ]
+    }
+  },
+  "joints": [
+    { "joint_id": "ankle", "name_ru": "голеностопный сустав" },
+    { "joint_id": "knee", "name_ru": "коленный сустав" },
+    { "joint_id": "hip", "name_ru": "тазобедренный сустав" },
+    { "joint_id": "lumbar_spine", "name_ru": "поясничный отдел позвоночника" },
+    { "joint_id": "thoracic_spine", "name_ru": "грудной отдел позвоночника" },
+    { "joint_id": "cervical_spine", "name_ru": "шейный отдел позвоночника" },
+    { "joint_id": "scapulothoracic", "name_ru": "лопаточно-грудное сочленение" },
+    { "joint_id": "glenohumeral", "name_ru": "плечевой сустав" },
+    { "joint_id": "elbow", "name_ru": "локтевой сустав" },
+    { "joint_id": "wrist", "name_ru": "лучезапястный сустав" }
+  ]
+}

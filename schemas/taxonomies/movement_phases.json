@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/movement_phases.json",
+  "title": "Movement phase taxonomy",
+  "$defs": {
+    "phase_type": {
+      "enum": [
+        "setup",
+        "start_position",
+        "eccentric",
+        "bottom_transition",
+        "concentric",
+        "top_position",
+        "peak_contraction",
+        "isometric_hold",
+        "return",
+        "reset",
+        "lockout",
+        "unrack",
+        "rerack",
+        "not_applicable"
+      ]
+    },
+    "contraction_type": {
+      "enum": [
+        "concentric",
+        "eccentric",
+        "isometric",
+        "quasi_isometric",
+        "stretch_shortening_cycle",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "phase_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$"
+    }
+  }
+}

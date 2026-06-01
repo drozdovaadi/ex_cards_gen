@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.local/schemas/taxonomies/exercise_classification.json",
+  "title": "Exercise classification taxonomy",
+  "$defs": {
+    "status": {
+      "enum": [
+        "staged_draft",
+        "human_reviewed",
+        "validated",
+        "deprecated"
+      ]
+    },
+    "compound_type": {
+      "enum": [
+        "compound",
+        "isolation",
+        "hybrid",
+        "unclear"
+      ]
+    },
+    "body_region": {
+      "enum": [
+        "upper_body",
+        "lower_body",
+        "core",
+        "full_body",
+        "unclear"
+      ]
+    },
+    "target_region": {
+      "enum": [
+        "chest",
+        "back",
+        "shoulders",
+        "arms",
+        "glutes",
+        "quadriceps",
+        "hamstrings",
+        "adductors",
+        "calves",
+        "core",
+        "full_body",
+        "unclear"
+      ]
+    },
+    "dominance_type": {
+      "enum": [
+        "hip_dominant",
+        "knee_dominant",
+        "ankle_dominant",
+        "horizontal_push",
+        "vertical_push",
+        "horizontal_pull",
+        "vertical_pull",
+        "elbow_flexion_dominant",
+        "elbow_extension_dominant",
+        "shoulder_dominant",
+        "trunk_dominant",
+        "balanced",
+        "isolation",
+        "unclear"
+      ]
+    },
+    "kinetic_chain": {
+      "enum": [
+        "open_chain",
+        "closed_chain",
+        "mixed",
+        "unclear"
+      ]
+    },
+    "movement_plane": {
+      "enum": [
+        "sagittal",
+        "frontal",
+        "transverse",
+        "multiplanar",
+        "unclear"
+      ]
+    },
+    "body_position": {
+      "enum": [
+        "standing",
+        "seated",
+        "supine",
+        "prone",
+        "side_lying",
+        "quadruped",
+        "kneeling",
+        "half_kneeling",
+        "incline",
+        "decline",
+        "hanging",
+        "supported",
+        "unsupported",
+        "unclear"
+      ]
+    },
+    "limb_pattern": {
+      "enum": [
+        "bilateral",
+        "unilateral",
+        "alternating",
+        "contralateral",
+        "ipsilateral",
+        "asymmetrical",
+        "unclear"
+      ]
+    },
+    "technical_complexity": {
+      "enum": [
+        "low",
+        "moderate",
+        "high",
+        "very_high",
+        "unclear"
+      ]
+    },
+    "fatigue_level": {
+      "enum": [
+        "none",
+        "low",
+        "moderate",
+        "high",
+        "very_high",
+        "unclear"
+      ]
+    },
+    "sfr_class": {
+      "enum": [
+        "high_stimulus_low_fatigue",
+        "balanced",
+        "low_stimulus_high_fatigue",
+        "context_dependent",
+        "unclear"
+      ]
+    }
+  }
+}
