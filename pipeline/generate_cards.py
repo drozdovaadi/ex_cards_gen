@@ -5,14 +5,17 @@ Generate staged exercise-card drafts from an input exercise list.
 This first implementation focuses on the reproducible infrastructure:
 - read exercise names from input files;
 - run the Life Science Research / NCBI Entrez branch locally;
-- require saved Amass MCP output as the second mandatory source branch;
+- require at least one secondary literature branch, either saved Amass MCP
+  output or the local open_literature branch;
 - normalize and deduplicate PubMed sources;
 - write source ledgers and schema-valid staged draft cards.
 
 Amass is intentionally not called from this script because the Amass MCP is
 available to the Codex chat agent, not as a local Python API in this project.
-The project pipeline requires the agent to save Amass results and pass them to
-this script with --amass-json so Amass and NCBI results are always merged.
+When Amass is unavailable, the project pipeline uses the local
+open_literature branch (Europe PMC + OpenAlex) and passes it with
+--literature-json so NCBI results are always merged with an independent
+secondary literature branch.
 """
 
 from __future__ import annotations
@@ -38,6 +41,7 @@ LIFE_SCIENCE_PROVIDER_BACKEND = "life_science_research_ncbi_pubmed"
 LIFE_SCIENCE_BACKEND_DISPLAY = "Life Science Research / NCBI PubMed"
 AMASS_PROVIDER = "amass"
 AMASS_PROVIDER_BACKEND = "amass_biomedcore"
+OPEN_LITERATURE_PROVIDER = "open_literature"
 
 
 CYRILLIC_TRANSLIT = str.maketrans(
@@ -1074,6 +1078,134 @@ def normalize_amass_source(record: dict[str, Any], entry: ExerciseEntry) -> dict
     return source
 
 
+def extract_entry_results(data: Any, entry: ExerciseEntry) -> list[dict[str, Any]]:
+    if isinstance(data, dict) and entry.exercise_id in data:
+        payload = data[entry.exercise_id]
+    elif isinstance(data, dict) and isinstance(data.get("exercises"), list):
+        payload = next(
+            (
+                item
+                for item in data["exercises"]
+                if isinstance(item, dict) and item.get("exercise_id") == entry.exercise_id
+            ),
+            {},
+        )
+    else:
+        payload = data
+
+    if isinstance(payload, dict):
+        results = payload.get("results", payload)
+    else:
+        results = payload
+    if not isinstance(results, list):
+        raise ValueError("expected a list or an object with a 'results' list")
+    return [result for result in results if isinstance(result, dict)]
+
+
+def coerce_string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return unique_strings([str(item) for item in value if item])
+    if isinstance(value, str):
+        return unique_strings([item.strip() for item in value.split(",") if item.strip()])
+    return []
+
+
+def normalize_open_literature_source(record: dict[str, Any], entry: ExerciseEntry) -> dict[str, Any]:
+    backend = record.get("backend") or next(iter(record.get("source_backends") or []), "open_literature")
+    provider_backend = record.get("provider_backend") or f"open_literature_{backend}"
+    raw_query_matches = record.get("query_matches") or []
+    if not raw_query_matches and (record.get("query_id") or record.get("query_scope")):
+        raw_query_matches = [
+            {
+                "query_id": record.get("query_id"),
+                "query_scope": record.get("query_scope"),
+                "priority": record.get("priority"),
+                "query": record.get("query"),
+            }
+        ]
+    query_metadata = query_matches_metadata(raw_query_matches)
+    title = record.get("title") or record.get("display_name") or ""
+    abstract = record.get("abstract") or record.get("abstractText") or ""
+    text_for_guess = " ".join([title, abstract, str(record.get("study_type") or "")])
+    source = {
+        "source_id": None,
+        "backend": backend,
+        "source_backends": coerce_string_list(record.get("source_backends")) or [backend],
+        "provider": OPEN_LITERATURE_PROVIDER,
+        "provider_backend": provider_backend,
+        "source_providers": coerce_string_list(record.get("source_providers")) or [OPEN_LITERATURE_PROVIDER],
+        "provider_backends": coerce_string_list(record.get("provider_backends")) or [provider_backend],
+        "openalex_id": record.get("openalex_id"),
+        "title": title,
+        "authors": coerce_string_list(record.get("authors")),
+        "journal": record.get("journal") or "",
+        "year": parse_year(record.get("year") or record.get("publicationDate") or record.get("publication_year")),
+        "pmid": record.get("pmid"),
+        "doi": record.get("doi"),
+        "pmcid": record.get("pmcid"),
+        "abstract": abstract,
+        "url": record.get("url"),
+        "study_type": record.get("study_type") or guess_study_type(text_for_guess),
+        "evidence_domain": record.get("evidence_domain") or guess_evidence_domains(text_for_guess),
+        "exercise_match": "unclear",
+        "has_fulltext": bool(record.get("has_fulltext") or record.get("hasFulltext") or record.get("pmcid")),
+        "is_oa": bool(record.get("is_oa")),
+        "is_retracted": bool(record.get("is_retracted") or record.get("isRetracted")),
+        "citation_count": record.get("citation_count") or record.get("citationCount") or record.get("cited_by_count"),
+        **query_metadata,
+        "relevance_notes": record.get("relevance_notes")
+        or "Imported from open literature output; relevance requires evidence extraction review.",
+    }
+    source["exercise_match"] = classify_exercise_match(source, entry)
+    return source
+
+
+def load_literature_sources(literature_paths: list[Path], entry: ExerciseEntry) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    sources: list[dict[str, Any]] = []
+    logs: list[dict[str, Any]] = []
+    for raw_path in literature_paths:
+        path = raw_path if raw_path.is_absolute() else PROJECT_ROOT / raw_path
+        if not path.exists():
+            logs.append(
+                {
+                    "backend": "open_literature",
+                    "provider": OPEN_LITERATURE_PROVIDER,
+                    "status": "error",
+                    "path": str(path),
+                    "error": "file not found",
+                }
+            )
+            continue
+        try:
+            data = json.loads(path.read_text(encoding="utf-8-sig"))
+            records = extract_entry_results(data, entry)
+            normalized = [normalize_open_literature_source(record, entry) for record in records]
+            sources.extend(normalized)
+            logs.append(
+                {
+                    "backend": "open_literature",
+                    "provider": OPEN_LITERATURE_PROVIDER,
+                    "provider_backends": sorted(
+                        {backend for source in normalized for backend in source.get("provider_backends", [])}
+                    ),
+                    "status": "ok",
+                    "path": str(path),
+                    "source_count": len(normalized),
+                }
+            )
+        except Exception as exc:
+            logs.append(
+                {
+                    "backend": "open_literature",
+                    "provider": OPEN_LITERATURE_PROVIDER,
+                    "status": "error",
+                    "path": str(path),
+                    "error": str(exc),
+                }
+            )
+    return sources, logs
+
+
 def source_dedupe_key(source: dict[str, Any]) -> str:
     for field in ("pmid", "doi", "pmcid"):
         value = source.get(field)
@@ -1390,13 +1522,17 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
 
     sources: list[dict[str, Any]] = []
     backend_logs = []
-    amass_sources, amass_logs = load_amass_sources(args.amass_json, entry)
+    amass_sources, amass_logs = load_amass_sources(args.amass_json or [], entry)
     sources.extend(amass_sources)
     backend_logs.extend(amass_logs)
-    if not amass_sources:
+    literature_sources, literature_logs = load_literature_sources(args.literature_json or [], entry)
+    sources.extend(literature_sources)
+    backend_logs.extend(literature_logs)
+    if not amass_sources and not literature_sources:
         raise PipelineError(
-            f"Amass source branch is mandatory for {entry.exercise_id}, "
-            "but no Amass sources were loaded."
+            f"A secondary literature branch is mandatory for {entry.exercise_id}, "
+            "but neither Amass nor open_literature sources were loaded. "
+            "Pass --amass-json or --literature-json."
         )
 
     try:
@@ -1456,10 +1592,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--amass-json",
         type=Path,
         action="append",
-        required=True,
         help=(
-            "Required Amass MCP search result JSON to merge. Supports either "
+            "Optional Amass MCP search result JSON to merge. Supports either "
             "{'results': [...]} or {exercise_id: {'results': [...]}}."
+        ),
+    )
+    parser.add_argument(
+        "--literature-json",
+        type=Path,
+        action="append",
+        help=(
+            "Open-literature result JSON to merge, usually from "
+            "pipeline/open_literature.py. Required when --amass-json is not usable."
         ),
     )
     parser.add_argument("--no-validate", action="store_true", help="Do not validate generated cards against JSON Schema.")

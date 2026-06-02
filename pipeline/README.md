@@ -25,11 +25,14 @@ python pipeline\amass_raw.py next --limit 1
 python pipeline\amass_raw.py save --exercise-id <exercise_id> --query-id <query_id>
 python pipeline\amass_raw.py audit --require-complete
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
-python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
+python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json
 python pipeline\populate_card.py --all
 ```
 
-Amass JSON is mandatory. The Codex agent should first build the query plan, use `pipeline/amass_raw.py next` to select missing Amass MCP calls, run Amass, save every raw response with `pipeline/amass_raw.py save`, audit coverage with `pipeline/amass_raw.py audit`, stage raw responses into `output/logs/amass_results.json`, and then run the local CLI so it can merge Amass with Life Science Research / NCBI PubMed results. See `pipeline/RUN_GENERATION.md`.
+When Amass is available, add `--amass-json output\logs\amass_results.json` to the `generate_cards.py` command.
+
+The mandatory source contract is Life Science Research / NCBI PubMed plus at least one independent secondary literature branch. Use `pipeline/open_literature.py` for the default branch through Europe PMC + OpenAlex. Amass JSON is optional enrichment when account limits allow it. See `pipeline/RUN_GENERATION.md`.
 
 Input line format:
 
@@ -61,7 +64,16 @@ Run independent mandatory search branches:
   - `specific_variation` first: exact technique and variation terms are authoritative when present.
   - `exercise_family` second: same family evidence fills gaps and supports broader mechanics.
   - `movement_pattern` third: similar pattern evidence is indirect and cannot override variation-specific findings.
-- Amass BioMedCore:
+- open_literature:
+  - Europe PMC
+  - OpenAlex
+  - biomechanics
+  - electromyography / EMG
+  - kinematics
+  - kinetics
+  - muscle activation
+  - resistance training
+- Optional Amass BioMedCore:
   - biomechanics
   - electromyography / EMG
   - kinematics
@@ -78,9 +90,9 @@ Run independent mandatory search branches:
 
 Consensus and Elicit are optional and should be used only when available.
 
-The current local CLI implements the Life Science Research / NCBI PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
+The current local CLI implements the Life Science Research / NCBI PubMed branch and accepts `--literature-json` from `pipeline/open_literature.py`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API, so saved Amass MCP result JSON is passed through optional `--amass-json`.
 
-Both Amass and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
+open_literature, optional Amass, and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
 Raw Amass MCP responses must be saved per query under `output/logs/amass_raw/<exercise_id>/<query_id>.json`, then staged with `pipeline/stage_amass_results.py`. The staging step attaches `query_matches` to each source and deduplicates records before `generate_cards.py` runs.
 
 Useful Amass raw commands:
@@ -122,7 +134,7 @@ Convert all backend records to one internal source shape:
 
 ### 4. Merge And Rank
 
-Amass and NCBI/PubMed results are merged into one source ledger. Amass is not treated as optional in the project pipeline.
+open_literature, optional Amass, and NCBI/PubMed results are merged into one source ledger. Amass is no longer treated as a blocker when account limits prevent use.
 
 Deduplicate by:
 
@@ -177,7 +189,7 @@ python pipeline\populate_card.py --exercise-id romanian_deadlift
 python pipeline\populate_card.py --all
 ```
 
-The current population step uses controlled movement templates and source IDs from the merged Amass + NCBI ledger. Template-supported movement families include:
+The current population step uses controlled movement templates and source IDs from the merged open_literature + NCBI ledger, with optional Amass sources when available. Template-supported movement families include:
 
 - squat
 - split squat / lunge

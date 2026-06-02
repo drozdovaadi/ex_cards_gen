@@ -28,8 +28,10 @@ The expected output is one structured exercise card per exercise, plus source/au
   - `movement_pattern`, priority 3: broad movement pattern, used only as indirect support.
 - Do not let `exercise_family` or `movement_pattern` results outrank direct `specific_variation` evidence.
 - Mandatory search backends for each exercise:
-  - Amass BioMedCore for enriched biomedical literature records.
   - Life Science Research / NCBI Entrez for PubMed search, summaries, fetches, and PubMed-to-PMC linking.
+  - At least one independent secondary literature branch:
+    - `open_literature` through Europe PMC + OpenAlex when Amass is unavailable.
+    - Amass BioMedCore when account limits allow it.
   - Life Science Research / NCBI PMC for open-access availability by PMCID.
 - Optional backends:
   - Consensus, only when account/search limits allow it.
@@ -45,14 +47,13 @@ Process exercises one at a time.
 For each exercise:
 
 1. Normalize the exercise name and known aliases.
-2. Build a tiered Amass query plan with `pipeline/amass_queries.py`.
-3. Use `pipeline/amass_raw.py next` to select the next missing Amass MCP query.
-4. Run Amass MCP searches and save each exact raw response with `pipeline/amass_raw.py save` under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
-5. Audit raw Amass coverage with `pipeline/amass_raw.py audit`.
-6. Stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
-7. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`.
+2. Run `pipeline/open_literature.py` to collect Europe PMC + OpenAlex results unless a complete Amass batch is available.
+3. Optionally build a tiered Amass query plan with `pipeline/amass_queries.py`.
+4. Optionally run Amass MCP searches and save each exact raw response with `pipeline/amass_raw.py save` under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
+5. Optionally audit and stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
+6. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`, passing `--literature-json` and optional `--amass-json`.
 8. Normalize source records to the project source format.
-9. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
+9. Merge and deduplicate open_literature, optional Amass, and NCBI sources by PMID, DOI, PMCID, and normalized title.
 10. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
 11. Fetch additional metadata or PMCID/open-access availability when useful.
 12. Generate a schema-valid `staged_draft` card and source ledger.

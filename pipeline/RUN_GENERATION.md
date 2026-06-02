@@ -8,12 +8,14 @@ This protocol is the project-level sequence for the command:
 
 ## Contract
 
-Both source branches are mandatory:
+The mandatory source contract is:
 
-- Amass BioMedCore through Codex MCP.
 - Life Science Research / NCBI through local `generate_cards.py`.
+- At least one independent secondary literature branch:
+  - default: `open_literature` through Europe PMC + OpenAlex;
+  - optional enrichment: Amass BioMedCore through Codex MCP when account limits allow it.
 
-The local Python pipeline does not call Amass directly. The Codex agent is responsible for the Amass MCP calls and for saving every raw per-query response into `output/logs/amass_raw/<exercise_id>/<query_id>.json` with `pipeline/amass_raw.py save`.
+The local Python pipeline does not call Amass directly. If Amass is used, the Codex agent is responsible for the Amass MCP calls and for saving every raw per-query response into `output/logs/amass_raw/<exercise_id>/<query_id>.json` with `pipeline/amass_raw.py save`.
 
 Both branches must use the same tiered search order:
 
@@ -25,7 +27,22 @@ Family and movement-pattern results are supplemental; they should fill gaps or s
 
 ## Steps
 
-### 1. Build Amass Query Plan
+### 1. Run Open Literature Search
+
+```powershell
+python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json
+```
+
+Outputs:
+
+```text
+output/logs/open_literature_results.json
+output/logs/open_literature_raw/<exercise_id>/<query_id>.<backend>.json
+```
+
+This branch uses Europe PMC and OpenAlex with the same `specific_variation` -> `exercise_family` -> `movement_pattern` priority order.
+
+### 2. Optional: Build Amass Query Plan
 
 ```powershell
 python pipeline\amass_queries.py input\exercises.txt
@@ -38,7 +55,7 @@ output/logs/amass_query_plan.json
 output/logs/amass_results.scaffold.json
 ```
 
-### 2. Run Amass MCP Searches
+### 3. Optional: Run Amass MCP Searches
 
 Use the raw helper to get the next missing query:
 
@@ -124,10 +141,16 @@ Each `results` item should preserve Amass fields such as:
 - `isRetracted`
 - `query_matches`
 
-### 3. Run Source Staging And NCBI Merge
+### 4. Run Source Staging And NCBI Merge
 
 ```powershell
-python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json
+```
+
+When Amass is available, add:
+
+```powershell
+--amass-json output\logs\amass_results.json
 ```
 
 Outputs:
@@ -138,7 +161,7 @@ output/sources/<exercise_id>.sources.json
 output/logs/<exercise_id>.log.json
 ```
 
-### 4. Populate Biomechanics
+### 5. Populate Biomechanics
 
 ```powershell
 python pipeline\populate_card.py --all
@@ -150,12 +173,12 @@ This updates cards in:
 output/exercise_cards/
 ```
 
-### 5. Verify
+### 6. Verify
 
 At minimum:
 
 ```powershell
-python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_raw.py','pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
+python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/open_literature.py','pipeline/amass_raw.py','pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
 ```
 
 For a real run, also inspect:
@@ -168,9 +191,9 @@ output/exercise_cards/<exercise_id>.json
 
 ## Failure Rules
 
-- Do not run `generate_cards.py` without `output/logs/amass_results.json`.
+- Do not run `generate_cards.py` without at least one secondary branch: `output/logs/open_literature_results.json` or `output/logs/amass_results.json`.
 - Do not treat NCBI-only output as complete.
 - Do not stage final Amass results from chat memory; save raw MCP responses through `pipeline/amass_raw.py save`.
-- If Amass returns no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
+- If open_literature and Amass both return no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
 - If direct variation evidence is sparse, use `exercise_family` and `movement_pattern` evidence as explicitly marked supplemental support.
 - If no movement template matches in `populate_card.py`, leave the card as a staged draft and record the limitation.
