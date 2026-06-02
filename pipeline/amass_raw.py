@@ -19,7 +19,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import sys
+import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -133,23 +136,48 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return data
 
 
+@contextmanager
+def manifest_lock(manifest_path: Path, timeout_seconds: float = 120.0):
+    lock_path = manifest_path.with_suffix(manifest_path.suffix + ".lock")
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    deadline = time.monotonic() + timeout_seconds
+    handle: int | None = None
+    while handle is None:
+        try:
+            handle = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                raise AmassRawError(f"Timed out waiting for manifest lock: {lock_path}")
+            time.sleep(0.2)
+    try:
+        yield
+    finally:
+        os.close(handle)
+        try:
+            lock_path.unlink()
+        except FileNotFoundError:
+            pass
+
+
 def update_manifest(manifest_path: Path, capture: dict[str, Any]) -> None:
-    manifest = load_manifest(manifest_path)
-    captures = [
-        item
-        for item in manifest.get("captures", [])
-        if not (
-            item.get("exercise_id") == capture["exercise_id"]
-            and item.get("query_id") == capture["query_id"]
+    with manifest_lock(manifest_path):
+        manifest = load_manifest(manifest_path)
+        captures = [
+            item
+            for item in manifest.get("captures", [])
+            if not (
+                item.get("exercise_id") == capture["exercise_id"]
+                and item.get("query_id") == capture["query_id"]
+            )
+        ]
+        captures.append(capture)
+        manifest["captures"] = sorted(
+            captures,
+            key=lambda item: (item.get("exercise_id") or "", item.get("priority") or 99, item.get("query_id") or ""),
         )
-    ]
-    captures.append(capture)
-    manifest["captures"] = sorted(
-        captures,
-        key=lambda item: (item.get("exercise_id") or "", item.get("priority") or 99, item.get("query_id") or ""),
-    )
-    manifest["updated_at"] = now_iso()
-    write_json(manifest_path, manifest)
+        manifest["updated_at"] = now_iso()
+        write_json(manifest_path, manifest)
+
 
 
 def command_next(args: argparse.Namespace) -> int:
