@@ -53,6 +53,10 @@ Create a canonical exercise identity:
 
 Run independent mandatory search branches:
 
+- Tiered exercise query strategy:
+  - `specific_variation` first: exact technique and variation terms are authoritative when present.
+  - `exercise_family` second: same family evidence fills gaps and supports broader mechanics.
+  - `movement_pattern` third: similar pattern evidence is indirect and cannot override variation-specific findings.
 - Amass BioMedCore:
   - biomechanics
   - electromyography / EMG
@@ -71,6 +75,8 @@ Run independent mandatory search branches:
 Consensus and Elicit are optional and should be used only when available.
 
 The current local CLI implements the NCBI/PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
+
+Both Amass and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
 
 ### 3. Normalize Sources
 
@@ -110,7 +116,9 @@ Deduplicate by:
 
 Rank higher:
 
-- direct exercise match
+- direct `specific_variation` exercise match
+- same-family evidence only after direct evidence
+- broad movement-pattern evidence only as indirect support
 - biomechanics, kinematics, kinetics, EMG, or muscle activation evidence
 - systematic reviews and reviews for synthesis
 - primary biomechanical studies for movement mechanics

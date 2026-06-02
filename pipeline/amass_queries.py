@@ -19,7 +19,15 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from generate_cards import ExerciseEntry, PROJECT_ROOT, load_exercises, looks_english, now_iso, write_json
+from generate_cards import (
+    ExerciseEntry,
+    PROJECT_ROOT,
+    build_search_term_tiers,
+    load_exercises,
+    looks_english,
+    now_iso,
+    write_json,
+)
 
 
 DEFAULT_EVIDENCE_TERMS = [
@@ -62,9 +70,9 @@ def unique_strings(values: list[str]) -> list[str]:
 
 
 def search_terms_for_entry(entry: ExerciseEntry) -> list[str]:
-    candidates = [entry.exercise_name, *entry.aliases, entry.raw_name]
-    english_candidates = [candidate for candidate in candidates if looks_english(candidate)]
-    return unique_strings(english_candidates or candidates)
+    return unique_strings(
+        [term for tier in build_search_term_tiers(entry) for term in tier["terms"]]
+    )
 
 
 def quoted(term: str) -> str:
@@ -80,45 +88,68 @@ def build_query_text(exercise_terms: list[str], evidence_terms: list[str]) -> st
     return f"{exercise_part} {evidence_part}"
 
 
+AMASS_QUERY_SPECS = [
+    ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
+    ("review_synthesis", REVIEW_TERMS + ["biomechanics", "muscle activation", "resistance training"]),
+    ("technique_and_load", TECHNIQUE_TERMS + ["biomechanics", "kinematics", "kinetics"]),
+]
+
+
+def amass_query_specs_for_scope(scope: str) -> list[tuple[str, list[str]]]:
+    if scope == "movement_pattern":
+        return [
+            ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
+            ("review_synthesis", REVIEW_TERMS + ["biomechanics", "resistance training"]),
+        ]
+    return AMASS_QUERY_SPECS
+
+
 def build_amass_queries(
     entry: ExerciseEntry,
     min_journal_quality_jufo: int,
     min_publication_date: str | None,
 ) -> list[dict[str, Any]]:
-    terms = search_terms_for_entry(entry)
-    query_specs = [
-        ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
-        ("review_synthesis", REVIEW_TERMS + ["biomechanics", "muscle activation", "resistance training"]),
-        ("technique_and_load", TECHNIQUE_TERMS + ["biomechanics", "kinematics", "kinetics"]),
-    ]
-
     queries = []
-    for query_id, evidence_terms in query_specs:
-        params: dict[str, Any] = {
-            "query": build_query_text(terms, evidence_terms),
-            "isRetracted": False,
-            "minJournalQualityJufo": min_journal_quality_jufo,
-        }
-        if min_publication_date:
-            params["minPublicationDate"] = min_publication_date
-        queries.append(
-            {
-                "query_id": query_id,
-                "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
-                "parameters": params,
-                "rationale": query_rationale(query_id),
+    for tier in build_search_term_tiers(entry):
+        query_scope = tier["query_scope"]
+        priority = tier["priority"]
+        terms = tier["terms"]
+        for query_kind, evidence_terms in amass_query_specs_for_scope(query_scope):
+            query_id = f"{query_scope}_{query_kind}"
+            params: dict[str, Any] = {
+                "query": build_query_text(terms, evidence_terms),
+                "isRetracted": False,
+                "minJournalQualityJufo": min_journal_quality_jufo,
             }
-        )
+            if min_publication_date:
+                params["minPublicationDate"] = min_publication_date
+            queries.append(
+                {
+                    "query_id": query_id,
+                    "query_scope": query_scope,
+                    "priority": priority,
+                    "match_class": tier["match_class"],
+                    "term_set": terms,
+                    "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
+                    "parameters": params,
+                    "rationale": query_rationale(query_kind, query_scope),
+                }
+            )
     return queries
 
 
-def query_rationale(query_id: str) -> str:
+def query_rationale(query_kind: str, query_scope: str) -> str:
+    scope_rationales = {
+        "specific_variation": "Priority 1 exact-variation search.",
+        "exercise_family": "Priority 2 family search used when exact-variation evidence is limited.",
+        "movement_pattern": "Priority 3 movement-pattern search used only as indirect support.",
+    }
     rationales = {
-        "biomechanics_core": "Find direct biomechanics, EMG, kinematic, kinetic, and muscle activation evidence.",
+        "biomechanics_core": "Find biomechanics, EMG, kinematic, kinetic, and muscle activation evidence.",
         "review_synthesis": "Find reviews or synthesis papers to anchor broad claims and limitations.",
         "technique_and_load": "Find sources about technique variables, range of motion, load, fatigue, and movement mechanics.",
     }
-    return rationales[query_id]
+    return f"{scope_rationales[query_scope]} {rationales[query_kind]}"
 
 
 def build_plan(
@@ -133,9 +164,11 @@ def build_plan(
         "backend": "amass_biomedcore",
         "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
         "instructions": [
-            "Run every query in exercises[].queries through Amass BioMedCore.",
+            "Run every query in exercises[].queries through Amass BioMedCore in ascending priority order.",
+            "Treat priority 1 specific_variation records as the strongest match; priority 2 and 3 records are supplemental.",
             "Combine all unique Amass records per exercise.",
             "Save results as output/logs/amass_results.json using the scaffold shape.",
+            "When possible, attach query_id, query_scope, priority, and query to each saved result as query_matches metadata.",
             "Do not remove PMID, DOI, amassId, abstract, hasFulltext, isRetracted, citationCount, or journalQualityJufo fields.",
         ],
         "result_file": str(PROJECT_ROOT / "output" / "logs" / "amass_results.json"),
@@ -146,6 +179,7 @@ def build_plan(
                 "exercise_name": entry.exercise_name,
                 "russian_name": entry.russian_name,
                 "aliases": entry.aliases,
+                "search_tiers": build_search_term_tiers(entry),
                 "search_terms": search_terms_for_entry(entry),
                 "warnings": entry_warnings(entry),
                 "queries": build_amass_queries(entry, min_journal_quality_jufo, min_publication_date),
@@ -169,6 +203,18 @@ def build_results_scaffold(plan: dict[str, Any]) -> dict[str, Any]:
             "exercise_name": item["exercise_name"],
             "russian_name": item["russian_name"],
             "aliases": item["aliases"],
+            "query_strategy": "tiered_specific_then_family_then_pattern",
+            "query_specs": [
+                {
+                    "query_id": query["query_id"],
+                    "query_scope": query["query_scope"],
+                    "priority": query["priority"],
+                    "match_class": query["match_class"],
+                    "term_set": query["term_set"],
+                    "query": query["parameters"]["query"],
+                }
+                for query in item["queries"]
+            ],
             "queries_used": [query["parameters"]["query"] for query in item["queries"]],
             "results": [],
         }
@@ -244,4 +290,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

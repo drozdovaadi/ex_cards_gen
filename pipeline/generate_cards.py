@@ -308,25 +308,409 @@ class NcbiEntrezClient:
         return None
 
 
-def build_pubmed_queries(entry: ExerciseEntry) -> list[str]:
-    search_terms = [entry.exercise_name, *entry.aliases]
-    search_terms = [term for term in search_terms if term and looks_english(term)]
-    if not search_terms:
-        search_terms = [entry.exercise_name]
+QUERY_SCOPE_PRIORITIES = {
+    "specific_variation": 1,
+    "exercise_family": 2,
+    "movement_pattern": 3,
+}
 
-    quoted_terms = " OR ".join(f'"{term}"' for term in dict.fromkeys(search_terms))
-    if len(search_terms) > 1:
-        exercise_part = f"({quoted_terms})"
-    else:
-        exercise_part = quoted_terms
+QUERY_SCOPE_MATCH_CLASS = {
+    "specific_variation": "direct",
+    "exercise_family": "same_family",
+    "movement_pattern": "indirect",
+}
 
-    return [
-        (
-            f"{exercise_part} AND "
-            '(biomechanics OR electromyography OR EMG OR kinematics OR kinetics '
-            'OR "muscle activation" OR "resistance training")'
+EXERCISE_MATCH_RANK = {
+    "direct": 0,
+    "close_variation": 1,
+    "same_family": 2,
+    "indirect": 3,
+    "unclear": 4,
+    "not_relevant": 5,
+}
+
+
+def unique_strings(values: list[str]) -> list[str]:
+    result = []
+    seen = set()
+    for value in values:
+        normalized = normalize_space(str(value))
+        key = normalized.lower()
+        if normalized and key not in seen:
+            seen.add(key)
+            result.append(normalized)
+    return result
+
+
+def english_search_terms(entry: ExerciseEntry) -> list[str]:
+    candidates = [entry.exercise_name, *entry.aliases, entry.raw_name]
+    english_candidates = [candidate for candidate in candidates if candidate and looks_english(candidate)]
+    return unique_strings(english_candidates or candidates)
+
+
+def entry_query_text(entry: ExerciseEntry) -> str:
+    return normalize_title(" ".join([entry.exercise_name, *entry.aliases, entry.raw_name]))
+
+
+def generated_profile_terms(entry: ExerciseEntry) -> dict[str, list[str]]:
+    text = entry_query_text(entry)
+    specific: list[str] = []
+    family: list[str] = []
+    pattern: list[str] = []
+
+    def has(*needles: str) -> bool:
+        return all(needle in text for needle in needles)
+
+    if has("squat"):
+        pattern.extend(["squat"])
+        if has("low", "bar"):
+            specific.extend(["low-bar back squat", "low bar back squat", "low bar squat"])
+            family.extend(["barbell back squat", "back squat"])
+        elif has("front"):
+            specific.extend(["barbell front squat", "front squat"])
+            family.extend(["barbell squat"])
+        elif has("hack"):
+            specific.extend(["sled hack squat", "hack squat"])
+            family.extend(["machine squat", "sled squat"])
+        elif has("split"):
+            specific.extend(["dumbbell split squat", "split squat"])
+            family.extend(["unilateral squat", "lunge"])
+        else:
+            family.extend(["barbell squat", "back squat"])
+
+    if has("leg", "press"):
+        specific.extend(["sled 45 degree leg press", "45-degree leg press", "45 degree leg press"])
+        family.extend(["leg press", "sled leg press"])
+        pattern.extend(["squat", "knee extension"])
+
+    if has("leg", "extension"):
+        specific.extend(["lever leg extension", "machine leg extension"])
+        family.extend(["leg extension"])
+        pattern.extend(["knee extension"])
+
+    if has("lunge"):
+        specific.extend(["dumbbell lunge", "walking lunge", "forward lunge"])
+        family.extend(["lunge", "split squat", "unilateral squat"])
+        pattern.extend(["squat", "unilateral knee dominant"])
+
+    if has("deadlift"):
+        pattern.extend(["hip hinge"])
+        if has("romanian"):
+            specific.extend(["Romanian deadlift", "RDL", "romanian dead lift"])
+            family.extend(["deadlift", "hip hinge"])
+        else:
+            specific.extend(["barbell deadlift", "conventional deadlift"])
+            family.extend(["deadlift"])
+
+    if has("hip", "thrust") or has("glute", "bridge"):
+        specific.extend(["barbell hip thrust", "hip thrust"])
+        family.extend(["hip thrust", "glute bridge"])
+        pattern.extend(["hip extension"])
+
+    if has("glute", "kickback"):
+        specific.extend(["cable glute kickback", "glute kickback"])
+        family.extend(["hip extension exercise"])
+        pattern.extend(["hip extension"])
+
+    if has("leg", "curl"):
+        if has("lying"):
+            specific.extend(["lying leg curl", "prone leg curl", "lever lying leg curl"])
+        elif has("seated"):
+            specific.extend(["seated leg curl", "lever seated leg curl"])
+        family.extend(["leg curl", "hamstring curl"])
+        pattern.extend(["knee flexion"])
+
+    if has("back", "extension"):
+        specific.extend(["back extension", "lever back extension", "hyperextension"])
+        family.extend(["back extension", "hip extension exercise"])
+        pattern.extend(["hip hinge", "trunk extension"])
+
+    if has("hip", "abduction"):
+        specific.extend(["seated hip abduction", "machine hip abduction"])
+        family.extend(["hip abduction"])
+        pattern.extend(["hip abduction"])
+
+    if has("hip", "adduction"):
+        specific.extend(["seated hip adduction", "machine hip adduction"])
+        family.extend(["hip adduction"])
+        pattern.extend(["hip adduction"])
+
+    if has("calf", "raise"):
+        if has("seated"):
+            specific.extend(["seated calf raise", "lever seated calf raise"])
+            family.extend(["calf raise", "soleus exercise"])
+        elif has("standing"):
+            specific.extend(["standing calf raise", "lever standing calf raise"])
+            family.extend(["calf raise", "gastrocnemius exercise"])
+        else:
+            family.extend(["calf raise"])
+        pattern.extend(["ankle plantar flexion"])
+
+    if has("bench", "press"):
+        pattern.extend(["horizontal press"])
+        if has("incline"):
+            if has("barbell"):
+                specific.extend(["barbell incline bench press", "incline bench press"])
+            elif has("dumbbell"):
+                specific.extend(["dumbbell incline bench press", "incline dumbbell bench press", "incline bench press"])
+            else:
+                specific.extend(["incline bench press"])
+            family.extend(["bench press", "chest press"])
+        elif has("dumbbell"):
+            specific.extend(["dumbbell bench press"])
+            family.extend(["bench press", "chest press"])
+        else:
+            specific.extend(["barbell bench press", "bench press"])
+            family.extend(["chest press"])
+
+    if has("dip"):
+        specific.extend(["chest dip", "parallel bar dip"])
+        family.extend(["dip", "chest press"])
+        pattern.extend(["vertical press", "shoulder extension"])
+
+    if has("push", "up") or "pushup" in text:
+        specific.extend(["push-up", "push up"])
+        family.extend(["push-up", "horizontal press"])
+        pattern.extend(["horizontal press"])
+
+    if has("fly"):
+        if has("reverse") or has("rear"):
+            specific.extend(["reverse fly", "rear lateral raise", "rear delt fly"])
+            family.extend(["reverse fly", "rear delt raise"])
+            pattern.extend(["shoulder horizontal abduction"])
+        else:
+            specific.extend(["dumbbell fly", "chest fly"])
+            family.extend(["chest fly"])
+            pattern.extend(["shoulder horizontal adduction"])
+
+    if has("pull", "up") or "pullup" in text:
+        specific.extend(["pull-up", "pull up"])
+        family.extend(["vertical pull", "lat pull"])
+        pattern.extend(["vertical pull"])
+
+    if has("chin", "up") or "chinup" in text:
+        specific.extend(["chin-up", "chin up"])
+        family.extend(["vertical pull", "pull-up"])
+        pattern.extend(["vertical pull"])
+
+    if has("pulldown"):
+        specific.extend(["lat pulldown", "cable pulldown"])
+        family.extend(["pulldown", "vertical pull"])
+        pattern.extend(["vertical pull"])
+
+    if has("row"):
+        pattern.extend(["horizontal pull"])
+        if has("seated"):
+            specific.extend(["seated cable row", "cable seated row"])
+            family.extend(["cable row", "row"])
+        elif contains_normalized_phrase(text, "t bar") or "tbar" in text:
+            specific.extend(["T-bar row", "plate-loaded T-bar row"])
+            family.extend(["row", "bent-over row"])
+        elif has("bent", "over"):
+            if has("barbell"):
+                specific.extend(["barbell bent-over row", "bent-over row"])
+            elif has("dumbbell"):
+                specific.extend(["dumbbell bent-over row", "dumbbell row", "bent-over row"])
+            else:
+                specific.extend(["bent-over row"])
+            family.extend(["row"])
+        else:
+            family.extend(["row"])
+
+    if has("pullover"):
+        specific.extend(["machine pullover", "lever pullover", "pullover"])
+        family.extend(["pullover", "lat exercise"])
+        pattern.extend(["shoulder extension"])
+
+    if has("military", "press") or has("shoulder", "press") or has("overhead", "press"):
+        if has("military"):
+            specific.extend(["military press", "barbell military press", "overhead press"])
+        elif has("dumbbell"):
+            specific.extend(["dumbbell shoulder press", "dumbbell overhead press"])
+        family.extend(["shoulder press", "overhead press"])
+        pattern.extend(["vertical press"])
+
+    if has("lateral", "raise"):
+        if has("rear"):
+            specific.extend(["dumbbell rear lateral raise", "rear lateral raise", "rear delt raise"])
+            family.extend(["reverse fly", "rear delt raise"])
+            pattern.extend(["shoulder horizontal abduction"])
+        elif has("cable"):
+            specific.extend(["cable lateral raise", "one arm cable lateral raise"])
+            family.extend(["lateral raise"])
+            pattern.extend(["shoulder abduction"])
+        else:
+            specific.extend(["dumbbell lateral raise", "lateral raise"])
+            family.extend(["lateral raise"])
+            pattern.extend(["shoulder abduction"])
+
+    if has("shrug"):
+        specific.extend(["barbell shrug", "shoulder shrug"])
+        family.extend(["shrug"])
+        pattern.extend(["scapular elevation"])
+
+    if has("curl"):
+        pattern.extend(["elbow flexion"])
+        if has("hammer"):
+            specific.extend(["hammer curl", "dumbbell hammer curl"])
+            family.extend(["biceps curl", "elbow flexion exercise"])
+        elif has("preacher"):
+            specific.extend(["preacher curl", "machine preacher curl", "lever preacher curl"])
+            family.extend(["biceps curl", "elbow flexion exercise"])
+        elif has("dumbbell"):
+            specific.extend(["dumbbell curl"])
+            family.extend(["biceps curl", "elbow flexion exercise"])
+        else:
+            specific.extend(["barbell curl"])
+            family.extend(["biceps curl", "elbow flexion exercise"])
+
+    if has("pushdown") or has("triceps", "extension"):
+        if has("pushdown"):
+            specific.extend(["triceps pushdown", "cable pushdown"])
+        if has("rope"):
+            specific.extend(["rope triceps extension", "cable rope triceps extension"])
+        specific.extend(["cable triceps extension"])
+        family.extend(["triceps extension", "elbow extension exercise"])
+        pattern.extend(["elbow extension"])
+
+    if has("plank"):
+        if has("side"):
+            specific.extend(["side plank"])
+            family.extend(["plank", "side bridge"])
+            pattern.extend(["anti-lateral flexion", "core stabilization"])
+        else:
+            specific.extend(["front plank", "prone plank"])
+            family.extend(["plank"])
+            pattern.extend(["anti-extension", "core stabilization"])
+
+    if has("crunch"):
+        specific.extend(["weighted crunch", "crunch"])
+        family.extend(["abdominal crunch"])
+        pattern.extend(["trunk flexion"])
+
+    if has("hanging", "leg", "raise"):
+        specific.extend(["hanging leg raise", "hanging knee raise"])
+        family.extend(["leg raise"])
+        pattern.extend(["hip flexion", "trunk flexion"])
+
+    return {
+        "specific_variation": unique_strings(specific),
+        "exercise_family": unique_strings(family),
+        "movement_pattern": unique_strings(pattern),
+    }
+
+
+def build_search_term_tiers(entry: ExerciseEntry) -> list[dict[str, Any]]:
+    generated = generated_profile_terms(entry)
+    specific_terms = unique_strings([*english_search_terms(entry), *generated["specific_variation"]])
+    if not specific_terms:
+        specific_terms = [entry.exercise_name]
+
+    tiers = []
+    seen: set[str] = set()
+    for scope in ["specific_variation", "exercise_family", "movement_pattern"]:
+        raw_terms = specific_terms if scope == "specific_variation" else generated[scope]
+        terms = []
+        for term in raw_terms:
+            key = normalize_title(term)
+            if key and key not in seen:
+                seen.add(key)
+                terms.append(term)
+        if terms:
+            tiers.append(
+                {
+                    "query_scope": scope,
+                    "priority": QUERY_SCOPE_PRIORITIES[scope],
+                    "match_class": QUERY_SCOPE_MATCH_CLASS[scope],
+                    "terms": terms,
+                }
+            )
+    return tiers
+
+
+def build_pubmed_query_text(exercise_terms: list[str]) -> str:
+    quoted_terms = " OR ".join(f'"{term}"' for term in exercise_terms)
+    exercise_part = f"({quoted_terms})" if len(exercise_terms) > 1 else quoted_terms
+    return (
+        f"{exercise_part} AND "
+        '(biomechanics OR electromyography OR EMG OR kinematics OR kinetics '
+        'OR "muscle activation" OR "joint moment" OR technique OR '
+        '"range of motion" OR "resistance training")'
+    )
+
+
+def query_scope_rationale(scope: str) -> str:
+    rationales = {
+        "specific_variation": "Priority 1: exact exercise variation and technique terms.",
+        "exercise_family": "Priority 2: same exercise family when exact-variation evidence is limited.",
+        "movement_pattern": "Priority 3: broad movement-pattern evidence used only as indirect support.",
+    }
+    return rationales[scope]
+
+
+def build_pubmed_query_specs(entry: ExerciseEntry) -> list[dict[str, Any]]:
+    specs = []
+    for tier in build_search_term_tiers(entry):
+        scope = tier["query_scope"]
+        specs.append(
+            {
+                "query_id": f"{scope}_pubmed_core",
+                "query_scope": scope,
+                "priority": tier["priority"],
+                "match_class": tier["match_class"],
+                "term_set": tier["terms"],
+                "query": build_pubmed_query_text(tier["terms"]),
+                "rationale": query_scope_rationale(scope),
+            }
         )
-    ]
+    return specs
+
+
+def build_pubmed_queries(entry: ExerciseEntry) -> list[str]:
+    return [spec["query"] for spec in build_pubmed_query_specs(entry)]
+
+
+def query_matches_metadata(matches: list[dict[str, Any]]) -> dict[str, Any]:
+    normalized_matches = []
+    seen = set()
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        query_id = str(match.get("query_id") or "")
+        scope = str(match.get("query_scope") or "")
+        try:
+            priority = int(match.get("priority") or QUERY_SCOPE_PRIORITIES.get(scope, 99))
+        except (TypeError, ValueError):
+            priority = 99
+        query = str(match.get("query") or "")
+        key = (query_id, scope, priority, query)
+        if key in seen:
+            continue
+        seen.add(key)
+        normalized_matches.append(
+            {
+                "query_id": query_id,
+                "query_scope": scope,
+                "priority": priority,
+                **({"query": query} if query else {}),
+            }
+        )
+
+    scopes = []
+    seen_scopes = set()
+    for match in sorted(normalized_matches, key=lambda item: item["priority"]):
+        scope = match.get("query_scope")
+        if scope and scope not in seen_scopes:
+            seen_scopes.add(scope)
+            scopes.append(scope)
+
+    best = min(normalized_matches, key=lambda item: item["priority"], default=None)
+    return {
+        "query_matches": normalized_matches,
+        "query_scopes": scopes,
+        "best_query_scope": best.get("query_scope") if best else None,
+        "best_query_priority": best.get("priority") if best else None,
+    }
 
 
 def parse_pubmed_xml(xml_path: Path) -> list[dict[str, Any]]:
@@ -484,10 +868,10 @@ def guess_evidence_domains(text: str) -> list[str]:
 
 def classify_exercise_match(source: dict[str, Any], entry: ExerciseEntry) -> str:
     haystack = normalize_title(" ".join([source.get("title") or "", source.get("abstract") or ""]))
-    terms = [entry.exercise_name, *entry.aliases, entry.raw_name]
-    normalized_terms = [normalize_title(term) for term in terms if term]
-    if any(term and term in haystack for term in normalized_terms):
-        return "direct"
+    for tier in build_search_term_tiers(entry):
+        normalized_terms = [normalize_title(term) for term in tier["terms"] if term]
+        if any(contains_normalized_phrase(haystack, term) for term in normalized_terms):
+            return tier["match_class"]
     return "unclear"
 
 
@@ -495,20 +879,39 @@ def normalize_title(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
 
 
+def contains_normalized_phrase(haystack: str, phrase: str) -> bool:
+    if not haystack or not phrase:
+        return False
+    return re.search(rf"(^|\s){re.escape(phrase)}($|\s)", haystack) is not None
+
+
 def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     client = NcbiEntrezClient(log_dir=log_dir)
-    queries = build_pubmed_queries(entry)
+    query_specs = build_pubmed_query_specs(entry)
     pmids: list[str] = []
-    for query in queries:
+    pmid_query_matches: dict[str, list[dict[str, Any]]] = {}
+    for spec in query_specs:
+        query = spec["query"]
         for pmid in client.esearch_pubmed(query, retmax=retmax):
             if pmid not in pmids:
                 pmids.append(pmid)
+            pmid_query_matches.setdefault(pmid, []).append(
+                {
+                    "query_id": spec["query_id"],
+                    "query_scope": spec["query_scope"],
+                    "priority": spec["priority"],
+                    "query": query,
+                }
+            )
 
     branch_log: dict[str, Any] = {
         "backend": "ncbi_pubmed",
         "status": "ok",
-        "queries_used": queries,
+        "query_strategy": "tiered_specific_then_family_then_pattern",
+        "query_specs": query_specs,
+        "queries_used": [spec["query"] for spec in query_specs],
         "pmids": pmids,
+        "pmid_query_matches": pmid_query_matches,
         "raw_files": client.raw_files,
     }
 
@@ -519,6 +922,7 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
     records = parse_pubmed_xml(xml_path)
 
     for record in records:
+        record["query_matches"] = pmid_query_matches.get(str(record.get("pmid")), [])
         if not record.get("pmcid") and record.get("pmid"):
             record["pmcid"] = client.elink_pubmed_to_pmc(record["pmid"], label=entry.exercise_id)
 
@@ -528,6 +932,7 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
 
 def normalize_ncbi_source(record: dict[str, Any], entry: ExerciseEntry) -> dict[str, Any]:
     pmcid = record.get("pmcid")
+    query_metadata = query_matches_metadata(record.get("query_matches") or [])
     return {
         "source_id": None,
         "backend": "ncbi_pubmed",
@@ -545,6 +950,7 @@ def normalize_ncbi_source(record: dict[str, Any], entry: ExerciseEntry) -> dict[
         "exercise_match": classify_exercise_match(record, entry),
         "has_fulltext": bool(pmcid),
         "is_retracted": bool(record.get("is_retracted")),
+        **query_metadata,
         "relevance_notes": "Collected by PubMed query; relevance requires evidence extraction review.",
     }
 
@@ -580,6 +986,17 @@ def load_amass_sources(amass_paths: list[Path], entry: ExerciseEntry) -> tuple[l
 
 def normalize_amass_source(record: dict[str, Any], entry: ExerciseEntry) -> dict[str, Any]:
     text_for_guess = " ".join([record.get("title") or "", record.get("abstract") or ""])
+    raw_query_matches = record.get("query_matches") or []
+    if not raw_query_matches and (record.get("query_id") or record.get("query_scope")):
+        raw_query_matches = [
+            {
+                "query_id": record.get("query_id"),
+                "query_scope": record.get("query_scope"),
+                "priority": record.get("priority"),
+                "query": record.get("query"),
+            }
+        ]
+    query_metadata = query_matches_metadata(raw_query_matches)
     source = {
         "source_id": None,
         "backend": "amass",
@@ -600,6 +1017,7 @@ def normalize_amass_source(record: dict[str, Any], entry: ExerciseEntry) -> dict
         "is_retracted": bool(record.get("isRetracted")),
         "citation_count": record.get("citationCount"),
         "journal_quality_jufo": record.get("journalQualityJufo"),
+        **query_metadata,
         "relevance_notes": "Imported from Amass MCP output; relevance requires evidence extraction review.",
     }
     source["exercise_match"] = classify_exercise_match(source, entry)
@@ -618,6 +1036,41 @@ def source_dedupe_key(source: dict[str, Any]) -> str:
     return f"hash:{digest}"
 
 
+def better_exercise_match(left: str | None, right: str | None) -> str:
+    left_value = left or "unclear"
+    right_value = right or "unclear"
+    if EXERCISE_MATCH_RANK.get(right_value, 99) < EXERCISE_MATCH_RANK.get(left_value, 99):
+        return right_value
+    return left_value
+
+
+def merge_query_metadata(existing: dict[str, Any], source: dict[str, Any]) -> None:
+    existing_matches = existing.get("query_matches") or []
+    source_matches = source.get("query_matches") or []
+    metadata = query_matches_metadata([*existing_matches, *source_matches])
+    existing.update(metadata)
+
+
+def inferred_query_priority_from_match(match: str | None) -> int:
+    if match in {"direct", "close_variation"}:
+        return QUERY_SCOPE_PRIORITIES["specific_variation"]
+    if match == "same_family":
+        return QUERY_SCOPE_PRIORITIES["exercise_family"]
+    if match == "indirect":
+        return QUERY_SCOPE_PRIORITIES["movement_pattern"]
+    return 99
+
+
+def source_query_priority(source: dict[str, Any]) -> int:
+    priority = source.get("best_query_priority")
+    if priority is not None:
+        try:
+            return int(priority)
+        except (TypeError, ValueError):
+            return 99
+    return inferred_query_priority_from_match(source.get("exercise_match"))
+
+
 def merge_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
     merged: dict[str, dict[str, Any]] = {}
     for source in sources:
@@ -630,8 +1083,19 @@ def merge_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
         backends.update(source.get("source_backends") or [source.get("backend")])
         existing["source_backends"] = sorted(backend for backend in backends if backend)
         existing["backend"] = "merged" if len(existing["source_backends"]) > 1 else existing.get("backend")
+        existing["exercise_match"] = better_exercise_match(existing.get("exercise_match"), source.get("exercise_match"))
+        merge_query_metadata(existing, source)
         for field, value in source.items():
-            if field in {"source_id", "backend", "source_backends"}:
+            if field in {
+                "source_id",
+                "backend",
+                "source_backends",
+                "exercise_match",
+                "query_matches",
+                "query_scopes",
+                "best_query_scope",
+                "best_query_priority",
+            }:
                 continue
             if not existing.get(field) and value:
                 existing[field] = value
@@ -642,7 +1106,8 @@ def merge_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
         merged.values(),
         key=lambda item: (
             item.get("is_retracted", False),
-            item.get("exercise_match") != "direct",
+            EXERCISE_MATCH_RANK.get(item.get("exercise_match") or "unclear", 99),
+            source_query_priority(item),
             item.get("year") is None,
             -(item.get("year") or 0),
             item.get("title") or "",

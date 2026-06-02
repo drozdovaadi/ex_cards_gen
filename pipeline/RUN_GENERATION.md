@@ -15,6 +15,14 @@ Both source branches are mandatory:
 
 The local Python pipeline does not call Amass directly. The Codex agent is responsible for the Amass MCP calls and for saving their results into `output/logs/amass_results.json`.
 
+Both branches must use the same tiered search order:
+
+1. `specific_variation`, priority 1: exact exercise variation and technique.
+2. `exercise_family`, priority 2: broader exercise family.
+3. `movement_pattern`, priority 3: similar movement pattern, indirect support only.
+
+Family and movement-pattern results are supplemental; they should fill gaps or support general mechanics, not override direct evidence for the exact variation.
+
 ## Steps
 
 ### 1. Build Amass Query Plan
@@ -34,10 +42,11 @@ output/logs/amass_results.scaffold.json
 
 For each item in `amass_query_plan.json`:
 
-1. Run every query in `exercises[].queries`.
+1. Run every query in `exercises[].queries` in ascending `priority` order.
 2. Use tool `mcp__codex_apps__amass._search_amass_biomedcore_records`.
 3. Merge unique records per exercise by `pmid`, `doi`, `amassId`, and normalized title.
 4. Save the result as `output/logs/amass_results.json`.
+5. When possible, preserve `query_id`, `query_scope`, `priority`, and `query` in each saved result's `query_matches` metadata.
 
 Expected shape:
 
@@ -48,6 +57,8 @@ Expected shape:
     "exercise_name": "barbell squat",
     "russian_name": "barbell squat",
     "aliases": [],
+    "query_strategy": "tiered_specific_then_family_then_pattern",
+    "query_specs": [],
     "queries_used": ["..."],
     "results": []
   }
@@ -116,5 +127,5 @@ output/exercise_cards/<exercise_id>.json
 - Do not run `generate_cards.py` without `output/logs/amass_results.json`.
 - Do not treat NCBI-only output as complete.
 - If Amass returns no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
+- If direct variation evidence is sparse, use `exercise_family` and `movement_pattern` evidence as explicitly marked supplemental support.
 - If no movement template matches in `populate_card.py`, leave the card as a staged draft and record the limitation.
-

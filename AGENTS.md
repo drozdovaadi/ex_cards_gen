@@ -22,6 +22,11 @@ The expected output is one structured exercise card per exercise, plus source/au
 ## Evidence Rules
 
 - Use scientific sources before web sources.
+- Search each exercise with a tiered strategy:
+  - `specific_variation`, priority 1: exact exercise variation and technique terms.
+  - `exercise_family`, priority 2: same exercise family, used as supplemental evidence.
+  - `movement_pattern`, priority 3: broad movement pattern, used only as indirect support.
+- Do not let `exercise_family` or `movement_pattern` results outrank direct `specific_variation` evidence.
 - Mandatory search backends for each exercise:
   - Amass BioMedCore for enriched biomedical literature records.
   - Life Science Research / NCBI Entrez for PubMed search, summaries, fetches, and PubMed-to-PMC linking.
@@ -40,9 +45,9 @@ Process exercises one at a time.
 For each exercise:
 
 1. Normalize the exercise name and known aliases.
-2. Build an Amass query plan with `pipeline/amass_queries.py`.
+2. Build a tiered Amass query plan with `pipeline/amass_queries.py`.
 3. Run Amass MCP searches and save `output/logs/amass_results.json`.
-4. Run NCBI/PubMed source staging with `pipeline/generate_cards.py`.
+4. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`.
 5. Normalize source records to the project source format.
 6. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
 7. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
