@@ -1098,12 +1098,16 @@ def apply_unknown_template(card: dict[str, Any], sources: list[dict[str, Any]]) 
 
 def refresh_evidence_summary(card: dict[str, Any], sources: list[dict[str, Any]], template_id: str) -> None:
     backends = sorted({backend for source in sources for backend in source.get("source_backends", [])})
+    providers = sorted({provider for source in sources for provider in source.get("source_providers", [])})
+    provider_backends = sorted({backend for source in sources for backend in source.get("provider_backends", [])})
     card["evidence_summary"] = {
         "source_count": len(sources),
         "direct_match_count": sum(1 for source in sources if source.get("exercise_match") == "direct"),
         "fulltext_count": sum(1 for source in sources if source.get("has_fulltext")),
         "retracted_count": sum(1 for source in sources if source.get("is_retracted")),
         "backends": backends,
+        "providers": providers,
+        "provider_backends": provider_backends,
         "template_id": template_id,
         "population_method": "controlled_template_with_source_ids",
         "important_caveat": "Большинство биомеханических полей являются структурированной inference-моделью на основе паттерна упражнения и найденных источников; точные утверждения из full text требуют отдельного extraction этапа.",
@@ -1270,4 +1274,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

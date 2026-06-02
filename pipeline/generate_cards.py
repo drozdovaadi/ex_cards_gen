@@ -33,6 +33,11 @@ from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "schemas" / "exercise_card.schema.json"
+LIFE_SCIENCE_PROVIDER = "life_science_research"
+LIFE_SCIENCE_PROVIDER_BACKEND = "life_science_research_ncbi_pubmed"
+LIFE_SCIENCE_BACKEND_DISPLAY = "Life Science Research / NCBI PubMed"
+AMASS_PROVIDER = "amass"
+AMASS_PROVIDER_BACKEND = "amass_biomedcore"
 
 
 CYRILLIC_TRANSLIT = str.maketrans(
@@ -301,6 +306,8 @@ class NcbiEntrezClient:
         for linkset in raw.get("linksets", []):
             for linkset_db in linkset.get("linksetdbs", []) or []:
                 if linkset_db.get("dbto") != "pmc":
+                    continue
+                if linkset_db.get("linkname") != "pubmed_pmc":
                     continue
                 links = linkset_db.get("links") or []
                 if links:
@@ -906,6 +913,10 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
 
     branch_log: dict[str, Any] = {
         "backend": "ncbi_pubmed",
+        "provider": LIFE_SCIENCE_PROVIDER,
+        "provider_backend": LIFE_SCIENCE_PROVIDER_BACKEND,
+        "backend_display": LIFE_SCIENCE_BACKEND_DISPLAY,
+        "script_path": str(client.script_path),
         "status": "ok",
         "query_strategy": "tiered_specific_then_family_then_pattern",
         "query_specs": query_specs,
@@ -921,12 +932,19 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
     xml_path = client.efetch_pubmed_xml(pmids, label=entry.exercise_id)
     records = parse_pubmed_xml(xml_path)
 
+    pmc_link_errors = []
     for record in records:
         record["query_matches"] = pmid_query_matches.get(str(record.get("pmid")), [])
         if not record.get("pmcid") and record.get("pmid"):
-            record["pmcid"] = client.elink_pubmed_to_pmc(record["pmid"], label=entry.exercise_id)
+            try:
+                record["pmcid"] = client.elink_pubmed_to_pmc(record["pmid"], label=entry.exercise_id)
+            except PipelineError as exc:
+                pmc_link_errors.append({"pmid": record["pmid"], "error": str(exc)})
+                record["pmcid"] = None
 
     branch_log["raw_files"] = client.raw_files
+    if pmc_link_errors:
+        branch_log["pmc_link_errors"] = pmc_link_errors
     return [normalize_ncbi_source(record, entry) for record in records], branch_log
 
 
@@ -937,6 +955,10 @@ def normalize_ncbi_source(record: dict[str, Any], entry: ExerciseEntry) -> dict[
         "source_id": None,
         "backend": "ncbi_pubmed",
         "source_backends": ["ncbi_pubmed"],
+        "provider": LIFE_SCIENCE_PROVIDER,
+        "provider_backend": LIFE_SCIENCE_PROVIDER_BACKEND,
+        "source_providers": [LIFE_SCIENCE_PROVIDER],
+        "provider_backends": [LIFE_SCIENCE_PROVIDER_BACKEND],
         "title": record.get("title") or "",
         "authors": record.get("authors") or [],
         "journal": record.get("journal") or "",
@@ -961,7 +983,16 @@ def load_amass_sources(amass_paths: list[Path], entry: ExerciseEntry) -> tuple[l
     for raw_path in amass_paths:
         path = raw_path if raw_path.is_absolute() else PROJECT_ROOT / raw_path
         if not path.exists():
-            logs.append({"backend": "amass", "status": "error", "path": str(path), "error": "file not found"})
+            logs.append(
+                {
+                    "backend": "amass",
+                    "provider": AMASS_PROVIDER,
+                    "provider_backend": AMASS_PROVIDER_BACKEND,
+                    "status": "error",
+                    "path": str(path),
+                    "error": "file not found",
+                }
+            )
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8-sig"))
@@ -974,13 +1005,24 @@ def load_amass_sources(amass_paths: list[Path], entry: ExerciseEntry) -> tuple[l
             logs.append(
                 {
                     "backend": "amass",
+                    "provider": AMASS_PROVIDER,
+                    "provider_backend": AMASS_PROVIDER_BACKEND,
                     "status": "ok",
                     "path": str(path),
                     "source_count": len(normalized),
                 }
             )
         except Exception as exc:
-            logs.append({"backend": "amass", "status": "error", "path": str(path), "error": str(exc)})
+            logs.append(
+                {
+                    "backend": "amass",
+                    "provider": AMASS_PROVIDER,
+                    "provider_backend": AMASS_PROVIDER_BACKEND,
+                    "status": "error",
+                    "path": str(path),
+                    "error": str(exc),
+                }
+            )
     return sources, logs
 
 
@@ -1001,6 +1043,10 @@ def normalize_amass_source(record: dict[str, Any], entry: ExerciseEntry) -> dict
         "source_id": None,
         "backend": "amass",
         "source_backends": ["amass"],
+        "provider": AMASS_PROVIDER,
+        "provider_backend": AMASS_PROVIDER_BACKEND,
+        "source_providers": [AMASS_PROVIDER],
+        "provider_backends": [AMASS_PROVIDER_BACKEND],
         "amass_id": record.get("amassId"),
         "title": record.get("title") or "",
         "authors": record.get("authors") or [],
@@ -1083,6 +1129,16 @@ def merge_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
         backends.update(source.get("source_backends") or [source.get("backend")])
         existing["source_backends"] = sorted(backend for backend in backends if backend)
         existing["backend"] = "merged" if len(existing["source_backends"]) > 1 else existing.get("backend")
+        providers = set(existing.get("source_providers") or ([existing.get("provider")] if existing.get("provider") else []))
+        providers.update(source.get("source_providers") or ([source.get("provider")] if source.get("provider") else []))
+        existing["source_providers"] = sorted(provider for provider in providers if provider)
+        provider_backends = set(existing.get("provider_backends") or [])
+        if existing.get("provider_backend"):
+            provider_backends.add(existing["provider_backend"])
+        provider_backends.update(source.get("provider_backends") or [])
+        if source.get("provider_backend"):
+            provider_backends.add(source["provider_backend"])
+        existing["provider_backends"] = sorted(provider_backend for provider_backend in provider_backends if provider_backend)
         existing["exercise_match"] = better_exercise_match(existing.get("exercise_match"), source.get("exercise_match"))
         merge_query_metadata(existing, source)
         for field, value in source.items():
@@ -1090,6 +1146,10 @@ def merge_sources(sources: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "source_id",
                 "backend",
                 "source_backends",
+                "provider",
+                "provider_backend",
+                "source_providers",
+                "provider_backends",
                 "exercise_match",
                 "query_matches",
                 "query_scopes",
@@ -1270,6 +1330,12 @@ def build_staged_draft_card(entry: ExerciseEntry, sources: list[dict[str, Any]])
             "fulltext_count": sum(1 for source in sources if source.get("has_fulltext")),
             "retracted_count": sum(1 for source in sources if source.get("is_retracted")),
             "backends": sorted({backend for source in sources for backend in source.get("source_backends", [])}),
+            "providers": sorted(
+                {provider for source in sources for provider in source.get("source_providers", [])}
+            ),
+            "provider_backends": sorted(
+                {backend for source in sources for backend in source.get("provider_backends", [])}
+            ),
         },
         "evidence_ledger": [summary_claim],
         "metadata": {
@@ -1337,6 +1403,9 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         backend_logs.append(
             {
                 "backend": "ncbi_pubmed",
+                "provider": LIFE_SCIENCE_PROVIDER,
+                "provider_backend": LIFE_SCIENCE_PROVIDER_BACKEND,
+                "backend_display": LIFE_SCIENCE_BACKEND_DISPLAY,
                 "status": "error",
                 "error": str(exc),
                 "queries_used": build_pubmed_queries(entry),
