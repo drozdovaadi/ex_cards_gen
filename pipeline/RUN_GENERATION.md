@@ -44,9 +44,27 @@ For each item in `amass_query_plan.json`:
 
 1. Run every query in `exercises[].queries` in ascending `priority` order.
 2. Use tool `mcp__codex_apps__amass._search_amass_biomedcore_records`.
-3. Merge unique records per exercise by `pmid`, `doi`, `amassId`, and normalized title.
-4. Save the result as `output/logs/amass_results.json`.
-5. When possible, preserve `query_id`, `query_scope`, `priority`, and `query` in each saved result's `query_matches` metadata.
+3. Save each raw MCP response as:
+
+```text
+output/logs/amass_raw/<exercise_id>/<query_id>.json
+```
+
+4. Stage the raw responses into the final Amass result file:
+
+```powershell
+python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
+```
+
+The staging script deduplicates records per exercise by `pmid`, `doi`, `amassId`, `pmcid`, and normalized title. It also attaches `query_matches` to every result with `query_id`, `query_scope`, `priority`, and `query`.
+
+If only a legacy aggregate Amass file exists, restage it with:
+
+```powershell
+python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --input output\logs\amass_results.json --output output\logs\amass_results.json
+```
+
+Legacy records without query provenance are marked with inferred query matches when the title/abstract contains terms from the tiered query plan.
 
 Expected shape:
 
@@ -79,6 +97,7 @@ Each `results` item should preserve Amass fields such as:
 - `journalQualityJufo`
 - `hasFulltext`
 - `isRetracted`
+- `query_matches`
 
 ### 3. Run Source Staging And NCBI Merge
 
@@ -111,7 +130,7 @@ output/exercise_cards/
 At minimum:
 
 ```powershell
-python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_queries.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
+python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
 ```
 
 For a real run, also inspect:

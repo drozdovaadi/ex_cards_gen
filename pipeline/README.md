@@ -21,11 +21,12 @@ Current CLI:
 
 ```powershell
 python pipeline\amass_queries.py input\exercises.txt
+python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
 python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
 python pipeline\populate_card.py --all
 ```
 
-Amass JSON is mandatory. The Codex agent should first build the query plan, run Amass MCP searches for the same exercise list, save the result JSON, and then run the local CLI so it can merge Amass with NCBI/PubMed results. See `pipeline/RUN_GENERATION.md`.
+Amass JSON is mandatory. The Codex agent should first build the query plan, run Amass MCP searches for the same exercise list, save raw per-query results, stage them into `output/logs/amass_results.json`, and then run the local CLI so it can merge Amass with NCBI/PubMed results. See `pipeline/RUN_GENERATION.md`.
 
 Input line format:
 
@@ -77,6 +78,7 @@ Consensus and Elicit are optional and should be used only when available.
 The current local CLI implements the NCBI/PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
 
 Both Amass and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
+Raw Amass MCP responses should be saved per query under `output/logs/amass_raw/<exercise_id>/<query_id>.json`, then staged with `pipeline/stage_amass_results.py`. The staging step attaches `query_matches` to each source and deduplicates records before `generate_cards.py` runs.
 
 ### 3. Normalize Sources
 
@@ -97,6 +99,7 @@ Convert all backend records to one internal source shape:
   "study_type": "unclear",
   "evidence_domain": [],
   "exercise_match": "unclear",
+  "query_matches": [],
   "has_fulltext": false,
   "is_retracted": false,
   "relevance_notes": ""
@@ -179,6 +182,12 @@ For each exercise:
 output/exercise_cards/<exercise_id>.json
 output/sources/<exercise_id>.sources.json
 output/logs/<exercise_id>.log.json
+```
+
+Amass staging also writes:
+
+```text
+output/logs/amass_results.json
 ```
 
 ## Quality Rules
