@@ -46,18 +46,20 @@ For each exercise:
 
 1. Normalize the exercise name and known aliases.
 2. Build a tiered Amass query plan with `pipeline/amass_queries.py`.
-3. Run Amass MCP searches and save raw per-query JSON under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
-4. Stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
-5. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`.
-6. Normalize source records to the project source format.
-7. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
-8. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
-9. Fetch additional metadata or PMCID/open-access availability when useful.
-10. Generate a schema-valid `staged_draft` card and source ledger.
-11. Populate structured biomechanics with `pipeline/populate_card.py`.
-12. Keep template-derived claims marked as `biomechanical_inference` or `expert_inference`.
-13. Validate against `schemas/exercise_card.schema.json`.
-14. Save the card, source JSON, and generation log.
+3. Use `pipeline/amass_raw.py next` to select the next missing Amass MCP query.
+4. Run Amass MCP searches and save each exact raw response with `pipeline/amass_raw.py save` under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
+5. Audit raw Amass coverage with `pipeline/amass_raw.py audit`.
+6. Stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
+7. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`.
+8. Normalize source records to the project source format.
+9. Merge and deduplicate Amass and NCBI sources by PMID, DOI, PMCID, and normalized title.
+10. Rank evidence by directness, study type, relevance, source quality, and full-text availability.
+11. Fetch additional metadata or PMCID/open-access availability when useful.
+12. Generate a schema-valid `staged_draft` card and source ledger.
+13. Populate structured biomechanics with `pipeline/populate_card.py`.
+14. Keep template-derived claims marked as `biomechanical_inference` or `expert_inference`.
+15. Validate against `schemas/exercise_card.schema.json`.
+16. Save the card, source JSON, and generation log.
 
 ## Card Architecture
 

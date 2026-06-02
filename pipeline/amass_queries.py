@@ -7,8 +7,10 @@ the Codex agent. The output of this script is the contract the agent follows:
 
 1. read output/logs/amass_query_plan.json;
 2. run each query through Amass BioMedCore;
-3. save the merged MCP output as output/logs/amass_results.json;
-4. pass that JSON to generate_cards.py with --amass-json.
+3. save every raw MCP output with pipeline/amass_raw.py into
+   output/logs/amass_raw/<exercise_id>/<query_id>.json;
+4. stage raw files into output/logs/amass_results.json;
+5. pass that JSON to generate_cards.py with --amass-json.
 """
 
 from __future__ import annotations
@@ -166,9 +168,11 @@ def build_plan(
         "instructions": [
             "Run every query in exercises[].queries through Amass BioMedCore in ascending priority order.",
             "Treat priority 1 specific_variation records as the strongest match; priority 2 and 3 records are supplemental.",
-            "Combine all unique Amass records per exercise.",
-            "Save results as output/logs/amass_results.json using the scaffold shape.",
-            "When possible, attach query_id, query_scope, priority, and query to each saved result as query_matches metadata.",
+            "Use pipeline/amass_raw.py next to print missing MCP calls and canonical raw paths.",
+            "Save each raw MCP response with pipeline/amass_raw.py save.",
+            "Audit raw coverage with pipeline/amass_raw.py audit before staging.",
+            "Stage raw files into output/logs/amass_results.json with pipeline/stage_amass_results.py.",
+            "The staging step attaches query_id, query_scope, priority, and query as query_matches metadata.",
             "Do not remove PMID, DOI, amassId, abstract, hasFulltext, isRetracted, citationCount, or journalQualityJufo fields.",
         ],
         "result_file": str(PROJECT_ROOT / "output" / "logs" / "amass_results.json"),

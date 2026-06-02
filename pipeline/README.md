@@ -21,12 +21,15 @@ Current CLI:
 
 ```powershell
 python pipeline\amass_queries.py input\exercises.txt
+python pipeline\amass_raw.py next --limit 1
+python pipeline\amass_raw.py save --exercise-id <exercise_id> --query-id <query_id>
+python pipeline\amass_raw.py audit --require-complete
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
 python pipeline\generate_cards.py input\exercises.txt --retmax 10 --amass-json output\logs\amass_results.json
 python pipeline\populate_card.py --all
 ```
 
-Amass JSON is mandatory. The Codex agent should first build the query plan, run Amass MCP searches for the same exercise list, save raw per-query results, stage them into `output/logs/amass_results.json`, and then run the local CLI so it can merge Amass with NCBI/PubMed results. See `pipeline/RUN_GENERATION.md`.
+Amass JSON is mandatory. The Codex agent should first build the query plan, use `pipeline/amass_raw.py next` to select missing Amass MCP calls, run Amass, save every raw response with `pipeline/amass_raw.py save`, audit coverage with `pipeline/amass_raw.py audit`, stage raw responses into `output/logs/amass_results.json`, and then run the local CLI so it can merge Amass with Life Science Research / NCBI PubMed results. See `pipeline/RUN_GENERATION.md`.
 
 Input line format:
 
@@ -75,10 +78,21 @@ Run independent mandatory search branches:
 
 Consensus and Elicit are optional and should be used only when available.
 
-The current local CLI implements the NCBI/PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
+The current local CLI implements the Life Science Research / NCBI PubMed branch and requires saved Amass MCP result JSON through `--amass-json`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API.
 
 Both Amass and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
-Raw Amass MCP responses should be saved per query under `output/logs/amass_raw/<exercise_id>/<query_id>.json`, then staged with `pipeline/stage_amass_results.py`. The staging step attaches `query_matches` to each source and deduplicates records before `generate_cards.py` runs.
+Raw Amass MCP responses must be saved per query under `output/logs/amass_raw/<exercise_id>/<query_id>.json`, then staged with `pipeline/stage_amass_results.py`. The staging step attaches `query_matches` to each source and deduplicates records before `generate_cards.py` runs.
+
+Useful Amass raw commands:
+
+```powershell
+python pipeline\amass_raw.py manifest --exercise-id barbell_front_squat
+python pipeline\amass_raw.py next --exercise-id barbell_front_squat --limit 2
+python pipeline\amass_raw.py save --exercise-id barbell_front_squat --query-id specific_variation_biomechanics_core
+python pipeline\amass_raw.py audit --exercise-id barbell_front_squat
+```
+
+`save` reads the raw Amass MCP JSON response from stdin by default. It stores the exact response, records SHA-256/byte count/record count in `output/logs/amass_raw_manifest.json`, and keeps the raw file parseable by `stage_amass_results.py`.
 
 ### 3. Normalize Sources
 

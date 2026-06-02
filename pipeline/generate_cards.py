@@ -699,7 +699,11 @@ def query_matches_metadata(matches: list[dict[str, Any]]) -> dict[str, Any]:
                 "query_id": query_id,
                 "query_scope": scope,
                 "priority": priority,
+                **({"match_class": match.get("match_class")} if match.get("match_class") else {}),
+                **({"term_set": match.get("term_set")} if match.get("term_set") else {}),
                 **({"query": query} if query else {}),
+                **({"match_source": match.get("match_source")} if match.get("match_source") else {}),
+                **({"term_matches": match.get("term_matches")} if match.get("term_matches") else {}),
             }
         )
 

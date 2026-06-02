@@ -13,7 +13,7 @@ Both source branches are mandatory:
 - Amass BioMedCore through Codex MCP.
 - Life Science Research / NCBI through local `generate_cards.py`.
 
-The local Python pipeline does not call Amass directly. The Codex agent is responsible for the Amass MCP calls and for saving their results into `output/logs/amass_results.json`.
+The local Python pipeline does not call Amass directly. The Codex agent is responsible for the Amass MCP calls and for saving every raw per-query response into `output/logs/amass_raw/<exercise_id>/<query_id>.json` with `pipeline/amass_raw.py save`.
 
 Both branches must use the same tiered search order:
 
@@ -40,17 +40,42 @@ output/logs/amass_results.scaffold.json
 
 ### 2. Run Amass MCP Searches
 
-For each item in `amass_query_plan.json`:
+Use the raw helper to get the next missing query:
+
+```powershell
+python pipeline\amass_raw.py next --limit 1
+```
+
+For each missing item:
 
 1. Run every query in `exercises[].queries` in ascending `priority` order.
 2. Use tool `mcp__codex_apps__amass._search_amass_biomedcore_records`.
-3. Save each raw MCP response as:
+3. Pipe or paste the exact JSON response into:
+
+```powershell
+python pipeline\amass_raw.py save --exercise-id <exercise_id> --query-id <query_id>
+```
+
+This writes:
 
 ```text
 output/logs/amass_raw/<exercise_id>/<query_id>.json
+output/logs/amass_raw_manifest.json
 ```
 
-4. Stage the raw responses into the final Amass result file:
+Audit coverage before staging:
+
+```powershell
+python pipeline\amass_raw.py audit --require-complete
+```
+
+For partial batches, scope audit to the current exercise:
+
+```powershell
+python pipeline\amass_raw.py audit --exercise-id <exercise_id>
+```
+
+Stage the raw responses into the final Amass result file:
 
 ```powershell
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
@@ -130,7 +155,7 @@ output/exercise_cards/
 At minimum:
 
 ```powershell
-python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
+python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/amass_raw.py','pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
 ```
 
 For a real run, also inspect:
@@ -145,6 +170,7 @@ output/exercise_cards/<exercise_id>.json
 
 - Do not run `generate_cards.py` without `output/logs/amass_results.json`.
 - Do not treat NCBI-only output as complete.
+- Do not stage final Amass results from chat memory; save raw MCP responses through `pipeline/amass_raw.py save`.
 - If Amass returns no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
 - If direct variation evidence is sparse, use `exercise_family` and `movement_pattern` evidence as explicitly marked supplemental support.
 - If no movement template matches in `populate_card.py`, leave the card as a staged draft and record the limitation.
