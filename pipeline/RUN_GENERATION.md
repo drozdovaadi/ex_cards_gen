@@ -161,11 +161,27 @@ output/sources/<exercise_id>.sources.json
 output/logs/<exercise_id>.log.json
 ```
 
-### 5. Populate Biomechanics
+`output/exercise_cards/` is the default card destination. Use a different
+card output directory only when the user explicitly requests it.
+
+### 5. Prepare Evidence-First Biomechanics
 
 ```powershell
 python pipeline\populate_card.py --all
 ```
+
+This command must not apply hardcoded movement templates. It prepares cards for
+per-field source extraction and removes any legacy template-populated
+biomechanical fields when run on previously populated cards. The old
+controlled-template command path has been removed; production cards must use the
+evidence-first/no-template route only.
+
+The next analysis step must fill each field from:
+
+1. direct exact-variation evidence;
+2. close-variation evidence, explicitly marked as indirect;
+3. same-family evidence, explicitly marked as analytical;
+4. broad movement-pattern evidence, only with a caveat.
 
 This updates cards in:
 
@@ -196,4 +212,5 @@ output/exercise_cards/<exercise_id>.json
 - Do not stage final Amass results from chat memory; save raw MCP responses through `pipeline/amass_raw.py save`.
 - If open_literature and Amass both return no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
 - If direct variation evidence is sparse, use `exercise_family` and `movement_pattern` evidence as explicitly marked supplemental support.
-- If no movement template matches in `populate_card.py`, leave the card as a staged draft and record the limitation.
+- Do not fill phases, muscle roles, load peaks, vector shifts, variations, alternatives, or programming fields from local movement templates.
+- If a field lacks direct evidence, fill it only by a documented analytical inference from suitable studies; otherwise keep it unresolved and record the limitation.

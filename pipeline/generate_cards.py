@@ -1351,7 +1351,7 @@ def build_staged_draft_card(entry: ExerciseEntry, sources: list[dict[str, Any]])
         "id": entry.exercise_id,
         "type": "exercise_card",
         "status": "staged_draft",
-        "schema_version": "0.1.0",
+        "schema_version": "0.2.0",
         "language": "ru",
         "names": {"ru": entry.russian_name, **({"en": entry.exercise_name} if looks_english(entry.exercise_name) else {})},
         "aliases": entry.aliases,
@@ -1366,6 +1366,11 @@ def build_staged_draft_card(entry: ExerciseEntry, sources: list[dict[str, Any]])
         "body_region": "unclear",
         "target_region": "unclear",
         "dominance_type": "unclear",
+        "display_labels": {
+            "dominance_label_ru": "Не определено",
+            "load_phase_label_ru": "Не определена",
+            "contraction_phase_label_ru": "Не определен",
+        },
         "modality": "unclear",
         "equipment_required": [],
         "compound_type": "unclear",
@@ -1443,7 +1448,12 @@ def build_staged_draft_card(entry: ExerciseEntry, sources: list[dict[str, Any]])
             "breathing_bracing": [],
             "tempo_control": [],
         },
-        "best_use": {},
+        "best_use": {
+            "summary": (
+                "Не заполнено на этапе source-staging: итоговый блок о том, когда выбирать это упражнение, "
+                "должен быть сформирован после биомеханического анализа, техники, альтернатив и ограничений."
+            )
+        },
         "typical_rep_ranges": [],
         "progression_options": [],
         "when_to_avoid_or_modify": [],
@@ -1477,7 +1487,7 @@ def build_staged_draft_card(entry: ExerciseEntry, sources: list[dict[str, Any]])
         "metadata": {
             "generated_at": now_iso(),
             "generator": "pipeline/generate_cards.py",
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
         },
     }
 
@@ -1515,9 +1525,15 @@ def write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def resolve_project_path(path: Path) -> Path:
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
 def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str, Any]:
-    output_root = PROJECT_ROOT / "output"
-    log_dir = output_root / "logs" / entry.exercise_id
+    cards_dir = resolve_project_path(args.cards_dir)
+    sources_dir = resolve_project_path(args.sources_dir)
+    logs_dir = resolve_project_path(args.logs_dir)
+    log_dir = logs_dir / entry.exercise_id
     log_dir.mkdir(parents=True, exist_ok=True)
 
     sources: list[dict[str, Any]] = []
@@ -1571,16 +1587,16 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
     generation_log = {
         "exercise_id": entry.exercise_id,
         "generated_at": now_iso(),
-        "card_path": str(output_root / "exercise_cards" / f"{entry.exercise_id}.json"),
-        "sources_path": str(output_root / "sources" / f"{entry.exercise_id}.sources.json"),
+        "card_path": str(cards_dir / f"{entry.exercise_id}.json"),
+        "sources_path": str(sources_dir / f"{entry.exercise_id}.sources.json"),
         "source_count": len(merged_sources),
         "validation": "skipped" if args.no_validate else "passed",
         "backend_logs": backend_logs,
     }
 
-    write_json(output_root / "exercise_cards" / f"{entry.exercise_id}.json", card)
-    write_json(output_root / "sources" / f"{entry.exercise_id}.sources.json", source_ledger)
-    write_json(output_root / "logs" / f"{entry.exercise_id}.log.json", generation_log)
+    write_json(cards_dir / f"{entry.exercise_id}.json", card)
+    write_json(sources_dir / f"{entry.exercise_id}.sources.json", source_ledger)
+    write_json(logs_dir / f"{entry.exercise_id}.log.json", generation_log)
     return generation_log
 
 
@@ -1588,6 +1604,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate staged exercise-card drafts.")
     parser.add_argument("input_file", type=Path, help="Path to .txt, .md, or .csv input file.")
     parser.add_argument("--retmax", type=int, default=10, help="Maximum PubMed results per exercise.")
+    parser.add_argument("--cards-dir", type=Path, default=Path("output") / "exercise_cards", help="Directory for generated card JSON files.")
+    parser.add_argument("--sources-dir", type=Path, default=Path("output") / "sources", help="Directory for generated source ledgers.")
+    parser.add_argument("--logs-dir", type=Path, default=Path("output") / "logs", help="Directory for generation logs.")
+    parser.add_argument("--report-path", type=Path, help="Generation report path. Defaults to <logs-dir>/generation_report.json.")
     parser.add_argument(
         "--amass-json",
         type=Path,
@@ -1635,7 +1655,8 @@ def main(argv: list[str] | None = None) -> int:
         "exercise_count": len(exercises),
         "logs": logs,
     }
-    write_json(PROJECT_ROOT / "output" / "logs" / "generation_report.json", report)
+    report_path = resolve_project_path(args.report_path) if args.report_path else resolve_project_path(args.logs_dir) / "generation_report.json"
+    write_json(report_path, report)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

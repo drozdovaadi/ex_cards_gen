@@ -23,6 +23,7 @@
     "body_region",
     "target_region",
     "dominance_type",
+    "display_labels",
     "modality",
     "equipment_required",
     "compound_type",
@@ -143,6 +144,9 @@
     "dominance_type": {
       "$ref": "taxonomies/exercise_classification.json#/$defs/dominance_type"
     },
+    "display_labels": {
+      "$ref": "#/$defs/display_labels"
+    },
     "modality": {
       "$ref": "taxonomies/equipment.json#/$defs/modality"
     },
@@ -261,8 +265,7 @@
       "$ref": "#/$defs/execution_steps"
     },
     "best_use": {
-      "type": "object",
-      "additionalProperties": true
+      "$ref": "#/$defs/best_use"
     },
     "typical_rep_ranges": {
       "type": "array",
@@ -360,6 +363,29 @@
     }
   },
   "$defs": {
+    "display_labels": {
+      "type": "object",
+      "required": [
+        "dominance_label_ru",
+        "load_phase_label_ru",
+        "contraction_phase_label_ru"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "dominance_label_ru": {
+          "type": "string",
+          "minLength": 1
+        },
+        "load_phase_label_ru": {
+          "type": "string",
+          "minLength": 1
+        },
+        "contraction_phase_label_ru": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
     "source_ids": {
       "type": "array",
       "items": {
@@ -1193,6 +1219,37 @@
         "type": "string"
       }
     },
+    "best_use": {
+      "type": "object",
+      "required": [
+        "summary"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 80
+        },
+        "primary_goal": {
+          "type": "string"
+        },
+        "best_context": {
+          "type": "string"
+        },
+        "less_suitable_for": {
+          "type": "string"
+        },
+        "hypertrophy": {
+          "type": "string"
+        },
+        "strength": {
+          "type": "string"
+        },
+        "skill": {
+          "type": "string"
+        }
+      }
+    },
     "superset_triset": {
       "type": "object",
       "required": [
@@ -1278,4 +1335,3 @@
     }
   }
 }
-

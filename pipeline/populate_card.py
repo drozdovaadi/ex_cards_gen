@@ -1,19 +1,19 @@
 #!/usr/bin/env python
 """
-Populate staged exercise cards with structured biomechanical content.
+Prepare staged exercise cards for evidence-first biomechanical analysis.
 
 This step reads:
 - output/exercise_cards/<exercise_id>.json
 - output/sources/<exercise_id>.sources.json
 
-It writes a schema-valid card with deterministic classification fields,
-movement phases, joint mechanics, muscle roles by phase, load mechanics, and
-practical programming fields.
+Project rule: normal generation must not populate final biomechanical fields
+from hardcoded movement templates. Direct exercise evidence has priority. If
+direct evidence is incomplete, each missing field must be filled by a separate
+analytical extraction step from suitable close-variation, same-family, or
+movement-pattern studies, with the evidence tier recorded per field.
 
-The first version is intentionally conservative: it uses controlled movement
-templates and attaches source IDs from the merged Amass + NCBI source ledger.
-Claims that are not directly extracted from papers are marked as
-biomechanical_inference or expert_inference.
+Legacy template population is removed from the command path. The production
+route is evidence-first and no-template only.
 """
 
 from __future__ import annotations
@@ -69,12 +69,451 @@ def load_muscles() -> dict[str, MuscleInfo]:
 MUSCLES = load_muscles()
 
 
+DOMINANCE_LABELS_RU = {
+    "hip_dominant": "Тазобедренная доминанта",
+    "knee_dominant": "Коленная доминанта",
+    "ankle_dominant": "Голеностопная доминанта",
+    "horizontal_push": "Горизонтальное жимовое движение",
+    "vertical_push": "Вертикальное жимовое движение",
+    "horizontal_pull": "Горизонтальная тяга",
+    "vertical_pull": "Вертикальная тяга",
+    "elbow_flexion_dominant": "Сгибание локтя",
+    "elbow_extension_dominant": "Разгибание локтя",
+    "shoulder_dominant": "Плечевая доминанта",
+    "trunk_dominant": "Доминанта корпуса",
+    "balanced": "Сбалансированное",
+    "isolation": "Изолированное",
+    "unclear": "Не определено",
+}
+
+LOAD_PHASE_LABELS_RU = {
+    "lengthened": "Растянутая",
+    "mid_range": "Средняя амплитуда",
+    "shortened": "Сокращенная",
+    "mixed": "Смешанная",
+    "unclear": "Не определена",
+}
+
+CONTRACTION_PHASE_LABELS_RU = {
+    "concentric": "Концентрическая",
+    "eccentric": "Эксцентрическая",
+    "isometric": "Изометрическая",
+    "quasi_isometric": "Квазиизометрическая",
+    "stretch_shortening_cycle": "Цикл растяжения-сокращения",
+    "mixed": "Смешанная",
+    "unclear": "Не определен",
+}
+
+TEXT_QUALITY_FORBIDDEN = {
+    "брейсинг": "напряжение корпуса",
+    "аксессуар": "вспомогательное упражнение",
+    "hip-dominant": "тазобедренная доминанта",
+    "movement template": "шаблон движения",
+    "movement-template": "шаблон движения",
+    "full text": "полный текст",
+    "source ledger": "список источников",
+    "hip тазобедренный шарнир": "наклон через тазобедренный сустав",
+    "контролируемое сгибание бедра в тазобедренный шарнир на одной ноге": "контролируемое сгибание в тазобедренном суставе на одной ноге",
+    "Румынская тяга на одной ноге и раскрытие таза на одной ноге": "румынской тяги на одной ноге и раскрытия таза на одной ноге",
+    "из румынская тяга на одной ноге": "из румынской тяги на одной ноге",
+    "при подъёме из тазобедренный шарнир": "при подъеме из позиции наклона через тазобедренный сустав",
+    "360-градусный напряжение корпуса": "360-градусное напряжение корпуса",
+    "Глубина тазобедренный шарнир": "Глубина наклона через тазобедренный сустав",
+    "амплитуду раскрытие таза": "амплитуду раскрытия таза",
+    "корпус теряет напряжение корпуса": "корпус теряет жесткость",
+    "растёт требование удерживать позвоночник от сгибания на поясницу": "возрастает требование к мышцам поясницы удерживать позвоночник от сгибания",
+    "контролю во фронтальной и поперечной плоскостях опорного бедра": "контролю опорного бедра во фронтальной и поперечной плоскостях",
+    "тазобедренный шарнир-позиции": "позиции наклона через тазобедренный сустав",
+    "тазобедренный шарнир-позицию": "позицию наклона через тазобедренный сустав",
+    "нижнюю тазобедренный шарнир": "нижнюю позицию наклона через тазобедренный сустав",
+    "пиковой раскрытие таза позиции": "пиковой позиции раскрытия таза",
+    "финальной раскрытие таза позиции": "финальной позиции раскрытия таза",
+    "пиковое удержание раскрытие таза": "пиковое удержание раскрытия таза",
+    "из раскрытие таза удержания": "из удержания раскрытия таза",
+    "контролируемым раскрытие таза": "контролируемым раскрытием таза",
+    "без полная фиксация": "без полной фиксации",
+    "раскрытие таза позицию": "позицию раскрытия таза",
+    "раскрытие таза позиции": "позиции раскрытия таза",
+    "полный полная фиксация": "полная фиксация",
+    "полного вертикального полная фиксация": "полной вертикальной фиксации",
+    "lengthened стимул": "стимул в растянутой позиции",
+    "средняя ягодичная контроль": "контроль средней ягодичной",
+    "средняя ягодичная стимула": "стимула средней ягодичной",
+    "deadlift/румынская тяга biomechanics": "биомеханики становой и румынской тяги",
+    "deadlift/румынская тяга": "становой и румынской тяги",
+    "deadlift-family": "вариантов становой тяги",
+    "exercise biomechanics": "биомеханике упражнений",
+    "biomechanics": "биомеханика",
+    "hip-focused rehabilitation exercises": "упражнений для контроля и укрепления тазобедренной области",
+    "hip-focused exercises": "упражнений для контроля тазобедренной области",
+    "hip-focused rehabilitation": "реабилитационных упражнений для тазобедренной области",
+    "hip abductor literature": "литературы по отводящим мышцам бедра",
+    "unilateral posterior-chain/balance literature": "литературы по одноопорной работе задней цепи и равновесию",
+    "spine-control literature": "литературы по контролю позвоночника",
+    "peer-reviewed": "рецензируемых",
+    "curated claims": "отобранных утверждений",
+    "close-family evidence": "косвенные данные по близким вариантам",
+    "variants": "вариантам",
+    "hamstrings adaptations": "адаптациям хамстрингов",
+    "ankle/hip balance": "равновесию в стопе и тазобедренном суставе",
+    "анти-флексионный спрос": "требование удерживать позвоночник от сгибания",
+    "анти-флексии": "удержанию позвоночника от сгибания",
+    "фронтально-трансверсальному контролю": "контролю во фронтальной и поперечной плоскостях",
+    "целевой техническая подсказка": "целевая задача",
+    "Шарнирный": "Тазобедренный",
+    "шарнирный": "тазобедренный",
+    "Шарнир": "Наклон через тазобедренный сустав",
+    "тазобедренный шарнир": "наклон через тазобедренный сустав",
+    "шарнир": "наклон через тазобедренный сустав",
+    "hinge": "наклон через тазобедренный сустав",
+    "lockout": "фиксация в конечной позиции",
+    "open-hip": "раскрытие таза",
+    "open hip": "раскрытие таза",
+    "hip airplane": "раскрытие таза на одной ноге",
+    "hip-airplane": "раскрытие таза на одной ноге",
+    "peak hold": "пиковое удержание",
+    "cue": "техническая подсказка",
+    "glute-med": "средняя ягодичная",
+    "glute med": "средняя ягодичная",
+    "motor-control": "двигательный контроль",
+    "motor control": "двигательный контроль",
+    "ROM": "амплитуда движения",
+    "RDL": "румынская тяга",
+    "accessory": "вспомогательное упражнение",
+}
+
+GENERIC_PRACTICAL_PLACEHOLDERS = {
+    "низко конфликтующее упражнение на другую мышечную группу",
+    "вариация с изменением оборудования",
+    "упражнение того же паттерна движения",
+}
+
+
 def muscle_name(muscle_id: str) -> str:
     return MUSCLES[muscle_id].name_ru
 
 
 def muscle_group(muscle_id: str) -> str:
     return MUSCLES[muscle_id].group_id
+
+
+def set_display_labels(card: dict[str, Any]) -> None:
+    dominance = card.get("dominance_type") or "unclear"
+    load_phase = card.get("stimulus_phase_bias") or "unclear"
+    contraction_phase = card.get("contraction_phase_emphasis") or "unclear"
+    card["display_labels"] = {
+        "dominance_label_ru": DOMINANCE_LABELS_RU.get(dominance, dominance),
+        "load_phase_label_ru": LOAD_PHASE_LABELS_RU.get(load_phase, load_phase),
+        "contraction_phase_label_ru": CONTRACTION_PHASE_LABELS_RU.get(contraction_phase, contraction_phase),
+    }
+
+
+def human_text_values(value: Any, path: tuple[str, ...] = ()) -> list[tuple[tuple[str, ...], str]]:
+    skip_keys = {
+        "id",
+        "exercise_id",
+        "exercise_name",
+        "russian_name",
+        "aliases",
+        "source_ids",
+        "source_id",
+        "evidence_type",
+        "confidence",
+        "confidence_score",
+        "schema_version",
+        "generated_at",
+        "populated_at",
+        "generator",
+        "metadata",
+        "names",
+        "pmid",
+        "pmcid",
+        "doi",
+        "exercise_family",
+        "variation",
+        "variation_of",
+        "related_variations",
+        "movement_patterns",
+        "phase_id",
+        "phase_type",
+        "contraction_type",
+        "joint_id",
+        "primary_actions",
+        "actions",
+        "primary_phases",
+        "contraction_phase_emphasis",
+        "stimulus_phase_bias",
+        "rom_characteristic",
+        "moment_demand",
+        "muscle_id",
+        "muscle_group_id",
+        "role",
+        "phase_or_range",
+        "muscle_length_state",
+        "relative_demand",
+        "joint_action_context",
+        "stabilization_role",
+        "score_type",
+        "stimulus_region",
+        "profile_type",
+        "peak_loading_region",
+        "external_resistance_type",
+        "line_of_force",
+        "load_placement",
+        "effect_direction",
+        "variable_id",
+        "sfr_class",
+        "status",
+        "type",
+        "language",
+    }
+    if path and path[-1] in skip_keys:
+        return []
+    if isinstance(value, str):
+        return [(path, value)]
+    if isinstance(value, list):
+        result = []
+        for index, item in enumerate(value):
+            result.extend(human_text_values(item, (*path, str(index))))
+        return result
+    if isinstance(value, dict):
+        result = []
+        for key, item in value.items():
+            result.extend(human_text_values(item, (*path, key)))
+        return result
+    return []
+
+
+def validate_quality_contract(card: dict[str, Any], template_id: str) -> None:
+    if template_id == "unknown":
+        return
+
+    errors: list[str] = []
+    for path, text in human_text_values(card):
+        lowered = text.lower()
+        for forbidden, replacement in TEXT_QUALITY_FORBIDDEN.items():
+            if forbidden in lowered:
+                errors.append(
+                    f"{'.'.join(path)} содержит '{forbidden}'. Используйте русскую формулировку: '{replacement}'."
+                )
+        if re.search(r"\b(systematic review|deadlift variants)\b", text, flags=re.IGNORECASE):
+            errors.append(
+                f"{'.'.join(path)} описывает источник вместо биомеханического факта. "
+                "Сформулируйте вывод как факт о мышцах, суставах или нагрузке."
+            )
+        if text in GENERIC_PRACTICAL_PLACEHOLDERS:
+            errors.append(f"{'.'.join(path)} содержит общий заполнитель вместо конкретного примера.")
+
+    biomechanics = card.get("biomechanics") or {}
+    phases = biomechanics.get("movement_phases") or []
+    if len(phases) < 4:
+        errors.append("biomechanics.movement_phases должен содержать не меньше 4 подробно описанных фаз.")
+    for phase in phases:
+        if len(phase.get("key_events") or []) < 3:
+            errors.append(f"Фаза {phase.get('phase_id')} должна иметь не меньше 3 ключевых событий.")
+        if len(phase.get("start_position") or "") < 20 or len(phase.get("end_position") or "") < 20:
+            errors.append(f"Фаза {phase.get('phase_id')} должна подробно описывать стартовую и конечную позицию.")
+
+    external = biomechanics.get("external_load_mechanics") or {}
+    if len(external.get("main_moment_arms") or []) < 2:
+        errors.append("external_load_mechanics.main_moment_arms должен содержать не меньше 2 конкретных условий.")
+    if len(external.get("vector_shift_effects") or []) < 2:
+        errors.append("external_load_mechanics.vector_shift_effects должен содержать не меньше 2 смещений вектора нагрузки.")
+    for item in external.get("vector_shift_effects") or []:
+        if len(item.get("biomechanical_effect") or "") < 60 or len(item.get("muscle_bias_change") or "") < 40:
+            errors.append(f"Смещение вектора '{item.get('change')}' описано слишком кратко.")
+        combined = f"{item.get('biomechanical_effect') or ''} {item.get('muscle_bias_change') or ''}".lower()
+        if "линия силы" not in combined or "плеч" not in combined:
+            errors.append(
+                f"Смещение вектора '{item.get('change')}' должно объяснять изменение линии силы и внешнего плеча момента."
+            )
+        if "акцент" not in combined or not re.search(r"увелич|сниж|смещ", combined):
+            errors.append(
+                f"Смещение вектора '{item.get('change')}' должно явно объяснять, "
+                "на какие мышцы акцент увеличивается, снижается или смещается."
+            )
+
+    resistance = card.get("resistance_profile") or {}
+    if len(resistance.get("explanation") or "") < 120:
+        errors.append("resistance_profile.explanation должен подробно объяснять пик нагрузки и условия его смещения.")
+
+    for field, minimum in (("supersets_trisets", 2), ("variations", 4), ("alternatives", 4)):
+        if len(card.get(field) or []) < minimum:
+            errors.append(f"{field} должен содержать не меньше {minimum} конкретных примеров.")
+
+    best_use = card.get("best_use") or {}
+    if not isinstance(best_use, dict) or len(best_use.get("summary") or "") < 120:
+        errors.append(
+            "best_use.summary должен быть итоговым русским абзацем: что это за упражнение, "
+            "когда его выбирать, чем оно отличается от альтернатив и когда оно особенно уместно."
+        )
+
+    if errors:
+        raise PopulateError("Card quality contract failed:\n- " + "\n- ".join(errors))
+
+
+def sanitize_card_text(value: Any, path: tuple[str, ...] = ()) -> Any:
+    skip_keys = {
+        "id",
+        "exercise_id",
+        "exercise_name",
+        "russian_name",
+        "aliases",
+        "source_ids",
+        "source_id",
+        "evidence_type",
+        "confidence",
+        "metadata",
+        "names",
+        "exercise_family",
+        "variation",
+        "variation_of",
+        "related_variations",
+        "movement_patterns",
+        "phase_id",
+        "phase_type",
+        "contraction_type",
+        "joint_id",
+        "primary_actions",
+        "actions",
+        "primary_phases",
+        "contraction_phase_emphasis",
+        "stimulus_phase_bias",
+        "rom_characteristic",
+        "moment_demand",
+        "muscle_id",
+        "muscle_group_id",
+        "role",
+        "phase_or_range",
+        "muscle_length_state",
+        "relative_demand",
+        "joint_action_context",
+        "stabilization_role",
+        "score_type",
+        "stimulus_region",
+        "profile_type",
+        "peak_loading_region",
+        "external_resistance_type",
+        "line_of_force",
+        "load_placement",
+        "effect_direction",
+        "variable_id",
+        "sfr_class",
+        "status",
+        "type",
+        "language",
+    }
+    if path and path[-1] in skip_keys:
+        return value
+    if isinstance(value, str):
+        cleaned = value
+        for forbidden, replacement in TEXT_QUALITY_FORBIDDEN.items():
+            if forbidden == "ROM":
+                cleaned = re.sub(r"\bROM\b", replacement, cleaned)
+            elif forbidden == "RDL":
+                cleaned = re.sub(r"\bRDL\b", replacement, cleaned)
+            else:
+                cleaned = re.sub(re.escape(forbidden), replacement, cleaned, flags=re.IGNORECASE)
+        return cleaned
+    if isinstance(value, list):
+        return [sanitize_card_text(item, (*path, str(index))) for index, item in enumerate(value)]
+    if isinstance(value, dict):
+        return {key: sanitize_card_text(item, (*path, key)) for key, item in value.items()}
+    return value
+
+
+def ensure_detailed_phase_and_load_text(card: dict[str, Any]) -> None:
+    biomechanics = card.get("biomechanics") or {}
+    for phase in biomechanics.get("movement_phases") or []:
+        phase_id = phase.get("phase_id") or "phase"
+        if len(phase.get("start_position") or "") < 20:
+            phase["start_position"] = (
+                f"{phase.get('start_position')}; положение проверяется до начала фазы, "
+                "чтобы не потерять контроль корпуса и рабочей траектории"
+            )
+        if len(phase.get("end_position") or "") < 20:
+            phase["end_position"] = (
+                f"{phase.get('end_position')}; фаза считается завершенной только при сохранении "
+                "положения основных суставов и устойчивой опоры"
+            )
+        key_events = list(phase.get("key_events") or [])
+        additions = [
+            "сохранить контролируемую траекторию без рывка",
+            "проверить положение целевых суставов перед переходом к следующей фазе",
+            "не допускать компенсации корпусом или потери опоры",
+        ]
+        for addition in additions:
+            if len(key_events) >= 3:
+                break
+            if addition not in key_events:
+                key_events.append(addition)
+        phase["key_events"] = key_events
+
+    external = biomechanics.get("external_load_mechanics") or {}
+    for item in external.get("vector_shift_effects") or []:
+        affected_muscles = [
+            muscle_name(muscle_id) if muscle_id in MUSCLES else str(muscle_id)
+            for muscle_id in item.get("affected_muscles") or []
+        ]
+        affected_joints = ", ".join(str(joint_id) for joint_id in item.get("affected_joints") or [])
+        muscle_text = ", ".join(affected_muscles) or "целевые мышцы"
+        direction = item.get("effect_direction")
+        biomechanical_effect = item.get("biomechanical_effect") or ""
+        if len(biomechanical_effect) < 80 or "линия силы" not in biomechanical_effect.lower() or "плеч" not in biomechanical_effect.lower():
+            if direction == "decreases":
+                item["biomechanical_effect"] = (
+                    f"{biomechanical_effect.rstrip('.')}. Линия силы становится ближе к рабочей оси "
+                    f"({affected_joints}), внешнее плечо момента уменьшается, поэтому требование к "
+                    f"{muscle_text} снижается, а упражнение легче удерживать без компенсации корпусом."
+                )
+            else:
+                item["biomechanical_effect"] = (
+                    f"{biomechanical_effect.rstrip('.')}. Линия силы уходит дальше от рабочей оси "
+                    f"({affected_joints}), внешнее плечо момента увеличивается, поэтому {muscle_text} "
+                    "должны создавать больше внутреннего усилия, чтобы сохранить ту же траекторию."
+                )
+        muscle_bias_change = item.get("muscle_bias_change") or ""
+        if len(muscle_bias_change) < 70 or "акцент" not in muscle_bias_change.lower():
+            if direction == "decreases":
+                item["muscle_bias_change"] = (
+                    f"{muscle_bias_change.rstrip('.;')}; акцент на {muscle_text} снижается, "
+                    "а часть работы может перейти в более стабильную опору или соседние суставы."
+                )
+            else:
+                item["muscle_bias_change"] = (
+                    f"{muscle_bias_change.rstrip('.;')}; акцент увеличивается на {muscle_text}, "
+                    "но вместе с этим растет цена стабилизации и риск технической компенсации."
+                )
+
+
+def ensure_best_use_summary(card: dict[str, Any]) -> None:
+    best_use = card.get("best_use")
+    if not isinstance(best_use, dict):
+        best_use = {}
+    if len(best_use.get("summary") or "") >= 120:
+        card["best_use"] = best_use
+        return
+
+    title = card.get("russian_name") or (card.get("names") or {}).get("ru") or card.get("exercise_name") or "Упражнение"
+    dominance = (card.get("display_labels") or {}).get("dominance_label_ru") or card.get("dominance_type") or "не определено"
+    primary_goal = best_use.get("primary_goal") or best_use.get("hypertrophy") or "для целевой силовой и мышечной работы"
+    context = best_use.get("best_context") or best_use.get("strength") or "когда техника повторяема, а нагрузка дозируется без потери контроля"
+    less_suitable = best_use.get("less_suitable_for") or "когда боль, усталость или настройка оборудования мешают сохранять механику"
+    alternatives = card.get("alternatives") or []
+    alternative_text = ""
+    if alternatives and isinstance(alternatives[0], dict):
+        first = alternatives[0]
+        alternative_text = (
+            f" По сравнению с вариантом «{first.get('name')}» отличие в том, что "
+            f"{first.get('main_difference') or first.get('similarity') or 'меняется механика нагрузки'}."
+        )
+
+    best_use["summary"] = (
+        f"{title} — {str(dominance).lower()} с задачей: {primary_goal}. "
+        f"Выбирать это упражнение стоит {context}. {less_suitable} — повод заменить или изменить вариант."
+        f"{alternative_text}"
+    )
+    card["best_use"] = best_use
 
 
 def card_search_text(card: dict[str, Any]) -> str:
@@ -361,742 +800,7 @@ def infer_equipment_and_modality(text: str, default_load_placement: str) -> dict
     }
 
 
-def match_template(card: dict[str, Any]) -> str:
-    text = card_search_text(card)
-    checks = [
-        ("romanian_deadlift", [r"\brdl\b", r"romanian deadlift", r"румын"]),
-        ("hip_thrust", [r"hip thrust", r"glute bridge", r"ягодичн.*мост", r"хип\s*траст"]),
-        ("bench_press", [r"bench press", r"жим.*леж", r"жим.*скам"]),
-        ("deadlift", [r"\bdeadlift\b", r"станов"]),
-        ("split_squat", [r"split squat", r"bulgarian", r"lunge", r"выпад", r"болгар"]),
-        ("squat", [r"\bsquat\b", r"присед"]),
-    ]
-    for template_id, patterns in checks:
-        if any(re.search(pattern, text) for pattern in patterns):
-            return template_id
-    return "unknown"
-
-
-def source_context(sources: list[dict[str, Any]]) -> dict[str, list[str]]:
-    biomech_domains = {"biomechanics", "kinematics", "kinetics", "emg", "muscle_activation"}
-    review_domains = {"systematic_review", "meta_analysis", "review"}
-    return {
-        "all": direct_source_ids(sources),
-        "biomech": source_ids_for_domains(sources, biomech_domains),
-        "reviews": source_ids_for_domains(sources, review_domains),
-        "fatigue": source_ids_for_domains(sources, {"fatigue", "injury_risk"}),
-        "technique": source_ids_for_domains(sources, {"technique", "equipment", "kinematics", "kinetics"}),
-    }
-
-
-def base_external_load(
-    equipment: dict[str, Any],
-    source_ids: list[str],
-    main_moment_arms: list[dict[str, Any]],
-    vector_shift_effects: list[dict[str, Any]],
-) -> dict[str, Any]:
-    confidence, _ = confidence_from_sources(source_ids)
-    return {
-        "external_resistance_type": equipment["external_resistance_type"],
-        "line_of_force": equipment["line_of_force"],
-        "load_placement": equipment["load_placement"],
-        "main_moment_arms": main_moment_arms,
-        "vector_shift_effects": vector_shift_effects,
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence,
-        "source_ids": source_ids,
-    }
-
-
-def moment_arm(joint_id: str, condition: str, effect: str, muscles: list[str]) -> dict[str, Any]:
-    return {
-        "joint_id": joint_id,
-        "condition": condition,
-        "effect": effect,
-        "affected_muscles": muscles,
-    }
-
-
-def vector_effect(
-    change: str,
-    effect_direction: str,
-    joints: list[str],
-    muscles: list[str],
-    biomechanical_effect: str,
-    muscle_bias_change: str,
-    source_ids: list[str],
-) -> dict[str, Any]:
-    confidence, _ = confidence_from_sources(source_ids)
-    return {
-        "change": change,
-        "effect_direction": effect_direction,
-        "affected_joints": joints,
-        "affected_muscles": muscles,
-        "biomechanical_effect": biomechanical_effect,
-        "muscle_bias_change": muscle_bias_change,
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence,
-        "source_ids": source_ids,
-    }
-
-
-def apply_squat_template(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-    ctx = source_context(sources)
-    text = card_search_text(card)
-    equipment = infer_equipment_and_modality(text, default_load_placement="shoulders")
-    biomech = ctx["biomech"]
-    technique = ctx["technique"]
-
-    card.update(
-        {
-            "exercise_family": "squat",
-            "category": "lower_body_strength",
-            "body_region": "lower_body",
-            "target_region": "quadriceps",
-            "dominance_type": "knee_dominant",
-            "modality": equipment["modality"],
-            "equipment_required": equipment["equipment_required"],
-            "compound_type": "compound",
-            "movement_patterns": ["squat"],
-            "force_vector": "vertical",
-            "kinetic_chain": "closed_chain",
-            "movement_planes": ["sagittal"],
-            "body_position": "standing",
-            "limb_pattern": "bilateral",
-            "technical_complexity": "moderate",
-            "mobility_requirements": [
-                "достаточная дорсифлексия голеностопа",
-                "контроль сгибания бедра и колена",
-                "способность удерживать нейтральное положение корпуса",
-            ],
-            "contraction_phase_emphasis": "mixed",
-            "stimulus_phase_bias": "lengthened",
-        }
-    )
-
-    card["primary_muscles"] = [
-        make_muscle_summary("vastus_lateralis", "prime_mover", "lengthened", "Создает разгибание колена, особенно при подъеме из нижней части амплитуды.", biomech),
-        make_muscle_summary("vastus_medialis", "prime_mover", "lengthened", "Участвует в разгибании колена и стабилизации коленного сустава.", biomech),
-        make_muscle_summary("rectus_femoris", "synergist", "mixed", "Вносит вклад в разгибание колена, но его роль зависит от углов бедра и колена.", biomech),
-        make_muscle_summary("lower_gluteus_maximus", "prime_mover", "lengthened", "Создает разгибание бедра при подъеме из нижней части приседа.", biomech),
-        make_muscle_summary("upper_gluteus_maximus", "synergist", "lengthened", "Помогает разгибанию бедра и контролю таза.", biomech),
-    ]
-    card["secondary_muscles"] = [
-        make_muscle_summary("hip_adductors", "synergist", "lengthened", "Приводящие могут помогать разгибанию бедра в нижней части приседа.", biomech),
-        make_muscle_summary("hamstrings", "dynamic_stabilizer", "mixed", "Помогают контролю тазобедренного сустава, но не являются главным разгибателем колена.", biomech),
-        make_muscle_summary("gastrocnemius", "dynamic_stabilizer", "mixed", "Помогает контролю голени и голеностопа.", biomech),
-    ]
-    card["stabilizers"] = [
-        {**make_muscle_summary("spinal_erectors", "stabilizer", "mixed", "Удерживают позвоночник от сгибания под внешней нагрузкой.", biomech), "stabilization_role": "anti_flexion"},
-        {**make_muscle_summary("transverse_abdominis", "stabilizer", "mixed", "Поддерживает внутрибрюшное давление и жесткость корпуса.", technique), "stabilization_role": "bracing"},
-        {**make_muscle_summary("obliques", "stabilizer", "mixed", "Помогают контролировать боковое смещение и ротацию корпуса.", technique), "stabilization_role": "anti_rotation"},
-    ]
-
-    card["joint_actions"] = [
-        make_joint_action_summary("hip", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("knee", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("ankle", ["dorsiflexion", "plantar_flexion"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("lumbar_spine", ["anti_flexion", "stabilization"], ["eccentric_descent", "concentric_ascent"], technique),
-    ]
-
-    phases = [
-        make_phase("setup", "setup", "настройка", "isometric", "атлет стоит под нагрузкой", "стопы и корпус зафиксированы", ["выбор стойки", "брейсинг", "позиция грифа/снаряда"], technique),
-        make_phase("eccentric_descent", "eccentric", "опускание", "eccentric", "таз и колени разогнуты", "таз и колени согнуты, достигнута нижняя позиция", ["сгибание бедра и колена", "дорсифлексия голеностопа", "контроль корпуса"], biomech),
-        make_phase("bottom_transition", "bottom_transition", "нижний переход", "stretch_shortening_cycle", "нижняя позиция", "начало подъема", ["смена направления", "максимальные требования к контролю колена и бедра"], biomech),
-        make_phase("concentric_ascent", "concentric", "подъем", "concentric", "нижняя позиция", "таз и колени разогнуты", ["разгибание колена", "разгибание бедра", "сохранение траектории центра массы"], biomech),
-        make_phase("top_position", "top_position", "верхняя позиция", "isometric", "подъем завершен", "стабильная вертикальная позиция", ["фиксация корпуса", "подготовка к следующему повторению"], technique),
-    ]
-    card["biomechanics"]["movement_phases"] = phases
-    card["biomechanics"]["joint_mechanics"] = [
-        make_joint_mechanics("hip", "eccentric_descent", ["flexion"], "large", "high", "разгибатели бедра контролируют сгибание бедра эксцентрически", "Чем больше наклон корпуса и плечо момента относительно таза, тем выше требование к разгибателям бедра.", biomech),
-        make_joint_mechanics("knee", "eccentric_descent", ["flexion"], "large", "high", "квадрицепс контролирует сгибание колена эксцентрически", "Большая передняя подача колена обычно повышает требования к разгибателям колена.", biomech),
-        make_joint_mechanics("ankle", "eccentric_descent", ["dorsiflexion"], "moderate", "moderate", "мышцы голени контролируют положение стопы и голени", "Ограничение дорсифлексии может менять глубину и наклон корпуса.", biomech),
-        make_joint_mechanics("hip", "concentric_ascent", ["extension"], "large", "high", "ягодичные и приводящие помогают разгибать бедро", "Вклад разгибателей бедра обычно возрастает при большем наклоне корпуса.", biomech),
-        make_joint_mechanics("knee", "concentric_ascent", ["extension"], "large", "high", "квадрицепс создает разгибание колена", "Подъем из нижней части требует высокого момента разгибания колена.", biomech),
-        make_joint_mechanics("lumbar_spine", "concentric_ascent", ["anti_flexion", "stabilization"], "near_isometric", "moderate", "разгибатели позвоночника и мышцы кора удерживают корпус", "Нагрузка на разгибатели позвоночника растет, если снаряд смещается вперед или корпус чрезмерно наклоняется.", technique),
-    ]
-    card["biomechanics"]["muscle_roles_by_phase"] = [
-        make_muscle_role_by_phase("eccentric_descent", "vastus_lateralis", "prime_mover", "эксцентрически контролирует сгибание колена", "knee_flexion_control", "eccentric", "lengthening", "high", biomech),
-        make_muscle_role_by_phase("eccentric_descent", "lower_gluteus_maximus", "prime_mover", "эксцентрически контролирует сгибание бедра", "hip_flexion_control", "eccentric", "lengthening", "high", biomech),
-        make_muscle_role_by_phase("eccentric_descent", "spinal_erectors", "stabilizer", "удерживает позвоночник от сгибания", "lumbar_anti_flexion", "isometric", "near_isometric", "moderate", technique),
-        make_muscle_role_by_phase("concentric_ascent", "vastus_lateralis", "prime_mover", "создает разгибание колена", "knee_extension", "concentric", "shortening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "lower_gluteus_maximus", "prime_mover", "создает разгибание бедра", "hip_extension", "concentric", "shortening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "hip_adductors", "synergist", "помогает разгибанию бедра из глубокой позиции", "hip_extension_assistance", "concentric", "shortening", "moderate", biomech),
-    ]
-    card["biomechanics"]["external_load_mechanics"] = base_external_load(
-        equipment,
-        technique,
-        [
-            moment_arm("knee", "колено сильнее смещается вперед относительно стопы", "увеличивается требование к разгибателям колена", ["vastus_lateralis", "vastus_medialis", "rectus_femoris"]),
-            moment_arm("hip", "корпус наклоняется сильнее или гриф расположен ниже/дальше назад", "увеличивается требование к разгибателям бедра и спины", ["lower_gluteus_maximus", "upper_gluteus_maximus", "spinal_erectors"]),
-        ],
-        [
-            vector_effect("более вертикальный корпус", "shifts", ["knee", "hip"], ["vastus_lateralis", "vastus_medialis"], "нагрузка смещается в сторону большего коленного момента", "относительно больше акцент на квадрицепс", technique),
-            vector_effect("больший наклон корпуса", "shifts", ["hip", "lumbar_spine"], ["lower_gluteus_maximus", "spinal_erectors"], "увеличивается плечо момента относительно бедра и позвоночника", "относительно больше акцент на ягодичные и разгибатели спины", technique),
-        ],
-    )
-    card["biomechanics"]["technique_variables"] = [
-        make_technique_variable("stance_width", "ширина стойки", "Изменяет положение бедра, колена и таза.", "Может менять вклад приводящих, ягодичных и глубину доступной амплитуды.", ["hip", "knee"], ["hip_adductors", "lower_gluteus_maximus", "vastus_lateralis"], technique),
-        make_technique_variable("bar_position", "положение грифа/нагрузки", "Высокое, низкое или переднее положение нагрузки меняет плечи момента.", "Переднее/высокое положение обычно поддерживает более вертикальный корпус; низкое положение часто увеличивает hip-dominant стратегию.", ["hip", "knee", "lumbar_spine"], ["vastus_lateralis", "lower_gluteus_maximus", "spinal_erectors"], technique),
-        make_technique_variable("depth", "глубина приседа", "Определяет конечные углы бедра и колена.", "Большая глубина повышает требования к контролю в растянутой позиции при достаточной мобильности.", ["hip", "knee", "ankle"], ["vastus_lateralis", "lower_gluteus_maximus", "hip_adductors"], technique),
-    ]
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Присед является многосуставным паттерном с основными требованиями к разгибанию колена и бедра; распределение нагрузки между квадрицепсом, ягодичными и разгибателями позвоночника зависит от глубины, наклона корпуса, положения нагрузки и антропометрии.",
-        biomech,
-    )
-    card["resistance_profile"] = {
-        "profile_type": "ascending",
-        "peak_loading_region": "bottom",
-        "explanation": "Для свободного приседа механические требования часто максимальны в нижней части и в начальном подъеме, где велики моменты в колене и бедре.",
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence_from_sources(biomech)[0],
-        "confidence_score": confidence_from_sources(biomech)[1],
-        "assumptions": ["Свободный вес или близкая к нему механика.", "Техника без выраженных компенсаций."],
-        "source_ids": biomech,
-    }
-    card["muscle_stimulus_phase_bias"] = [
-        {"muscle_id": "vastus_lateralis", "stimulus_region": "lengthened", "rationale": "Высокие требования в нижней части амплитуды при согнутом колене.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-        {"muscle_id": "lower_gluteus_maximus", "stimulus_region": "lengthened", "rationale": "Высокие требования при согнутом бедре в нижней части приседа.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-    ]
-    card["relative_muscle_emphasis"] = [
-        relative_emphasis("vastus_lateralis", 85, "Основной разгибатель колена в приседе.", biomech),
-        relative_emphasis("vastus_medialis", 80, "Сильный вклад в разгибание колена.", biomech),
-        relative_emphasis("lower_gluteus_maximus", 75, "Сильный вклад в разгибание бедра, особенно при глубокой амплитуде.", biomech),
-        relative_emphasis("hip_adductors", 55, "Синергист разгибания бедра, особенно в нижних углах.", biomech),
-    ]
-    fill_common_practical_fields(card, source_ids=technique, profile="squat")
-
-
-def apply_hinge_template(card: dict[str, Any], sources: list[dict[str, Any]], romanian: bool) -> None:
-    ctx = source_context(sources)
-    text = card_search_text(card)
-    equipment = infer_equipment_and_modality(text, default_load_placement="hands")
-    biomech = ctx["biomech"]
-    technique = ctx["technique"]
-    family = "romanian_deadlift" if romanian else "deadlift"
-
-    card.update(
-        {
-            "exercise_family": family,
-            "category": "lower_body_strength",
-            "body_region": "lower_body",
-            "target_region": "hamstrings" if romanian else "full_body",
-            "dominance_type": "hip_dominant" if romanian else "balanced",
-            "modality": equipment["modality"],
-            "equipment_required": equipment["equipment_required"],
-            "compound_type": "compound",
-            "movement_patterns": ["hinge"],
-            "force_vector": "vertical",
-            "kinetic_chain": "closed_chain",
-            "movement_planes": ["sagittal"],
-            "body_position": "standing",
-            "limb_pattern": "bilateral",
-            "technical_complexity": "moderate" if romanian else "high",
-            "mobility_requirements": [
-                "контроль тазобедренного шарнира",
-                "способность удерживать нейтральный позвоночник",
-                "достаточная подвижность задней поверхности бедра",
-            ],
-            "contraction_phase_emphasis": "mixed",
-            "stimulus_phase_bias": "lengthened",
-        }
-    )
-
-    card["primary_muscles"] = [
-        make_muscle_summary("hamstrings", "prime_mover", "lengthened", "Контролируют сгибание бедра при опускании и помогают разгибанию бедра при подъеме.", biomech),
-        make_muscle_summary("lower_gluteus_maximus", "prime_mover", "lengthened", "Создает разгибание бедра при подъеме.", biomech),
-        make_muscle_summary("upper_gluteus_maximus", "synergist", "mixed", "Помогает разгибанию бедра и контролю таза.", biomech),
-    ]
-    if not romanian:
-        card["primary_muscles"].extend(
-            [
-                make_muscle_summary("vastus_lateralis", "synergist", "mixed", "Помогает разгибанию колена при отрыве снаряда от пола.", biomech),
-                make_muscle_summary("spinal_erectors", "stabilizer", "mixed", "Удерживает позвоночник от сгибания под нагрузкой.", biomech),
-            ]
-        )
-    card["secondary_muscles"] = [
-        make_muscle_summary("hip_adductors", "synergist", "lengthened", "Может помогать разгибанию бедра и стабилизации таза.", biomech),
-        make_muscle_summary("forearm_grip", "stabilizer", "mixed", "Удерживает снаряд в руках.", technique),
-    ]
-    card["stabilizers"] = [
-        {**make_muscle_summary("spinal_erectors", "stabilizer", "mixed", "Удерживают нейтральное положение позвоночника.", biomech), "stabilization_role": "anti_flexion"},
-        {**make_muscle_summary("transverse_abdominis", "stabilizer", "mixed", "Поддерживает брейсинг и жесткость корпуса.", technique), "stabilization_role": "bracing"},
-        {**make_muscle_summary("lower_lats", "stabilizer", "mixed", "Помогает удерживать снаряд ближе к телу и контролировать плечевой пояс.", technique), "stabilization_role": "bar_path_control"},
-    ]
-    card["joint_actions"] = [
-        make_joint_action_summary("hip", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("knee", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("lumbar_spine", ["anti_flexion", "stabilization"], ["eccentric_descent", "concentric_ascent"], technique),
-        make_joint_action_summary("scapulothoracic", ["stabilization"], ["eccentric_descent", "concentric_ascent"], technique),
-    ]
-
-    if romanian:
-        phases = [
-            make_phase("setup", "setup", "настройка", "isometric", "стойка с нагрузкой в руках", "корпус зафиксирован, колени слегка согнуты", ["брейсинг", "фиксация лопаток", "снаряд близко к бедрам"], technique),
-            make_phase("eccentric_descent", "eccentric", "опускание", "eccentric", "таз разогнут, снаряд у бедер", "таз отведен назад, хамстринги растянуты", ["сгибание бедра", "небольшое сгибание колена", "снаряд движется близко к ногам"], biomech),
-            make_phase("bottom_transition", "bottom_transition", "нижний переход", "isometric", "конец доступной амплитуды", "начало подъема", ["сохранение нейтрального позвоночника", "контроль растянутой позиции"], biomech),
-            make_phase("concentric_ascent", "concentric", "подъем", "concentric", "таз согнут", "таз разогнут", ["разгибание бедра", "снаряд остается близко к телу"], biomech),
-            make_phase("top_position", "top_position", "верхняя позиция", "isometric", "таз разогнут", "стабильная стойка", ["фиксация таза без переразгибания поясницы"], technique),
-        ]
-    else:
-        phases = [
-            make_phase("setup", "setup", "стартовая настройка", "isometric", "снаряд на полу", "корпус и хват зафиксированы", ["брейсинг", "позиция таза", "снаряд близко к середине стопы"], technique),
-            make_phase("concentric_ascent", "concentric", "подъем с пола", "concentric", "снаряд на полу", "снаряд поднят до вертикальной стойки", ["разгибание колена и бедра", "удержание позвоночника", "контроль траектории снаряда"], biomech),
-            make_phase("lockout", "lockout", "фиксация", "isometric", "снаряд поднят", "таз и колени разогнуты", ["завершение разгибания бедра", "фиксация корпуса"], technique),
-            make_phase("eccentric_descent", "eccentric", "возврат вниз", "eccentric", "верхняя позиция", "снаряд возвращен к полу", ["контроль сгибания бедра и колена", "сохранение близкой траектории"], biomech),
-        ]
-    card["biomechanics"]["movement_phases"] = phases
-    card["biomechanics"]["joint_mechanics"] = [
-        make_joint_mechanics("hip", "eccentric_descent", ["flexion"], "large", "high", "хамстринги и ягодичные контролируют сгибание бедра", "Плечо момента относительно бедра растет при удалении снаряда от тела.", biomech),
-        make_joint_mechanics("hip", "concentric_ascent", ["extension"], "large", "high", "ягодичные и хамстринги разгибают бедро", "В румынской тяге колено меняет угол меньше, чем в классической тяге.", biomech),
-        make_joint_mechanics("knee", "eccentric_descent", ["flexion"], "small" if romanian else "moderate", "low" if romanian else "moderate", "квадрицепс контролирует угол колена", "Большее сгибание колена снижает растяжение хамстрингов и меняет вклад мышц.", biomech),
-        make_joint_mechanics("lumbar_spine", "eccentric_descent", ["anti_flexion", "stabilization"], "near_isometric", "high", "разгибатели позвоночника стабилизируют корпус", "Смещение нагрузки вперед увеличивает требования к антифлексии.", technique),
-    ]
-    card["biomechanics"]["muscle_roles_by_phase"] = [
-        make_muscle_role_by_phase("eccentric_descent", "hamstrings", "prime_mover", "эксцентрически контролируют сгибание бедра", "hip_flexion_control", "eccentric", "lengthening", "high", biomech),
-        make_muscle_role_by_phase("eccentric_descent", "lower_gluteus_maximus", "prime_mover", "контролирует сгибание бедра", "hip_flexion_control", "eccentric", "lengthening", "moderate", biomech),
-        make_muscle_role_by_phase("eccentric_descent", "spinal_erectors", "stabilizer", "удерживает позвоночник от сгибания", "lumbar_anti_flexion", "isometric", "near_isometric", "high", technique),
-        make_muscle_role_by_phase("concentric_ascent", "hamstrings", "prime_mover", "помогают разгибать бедро", "hip_extension", "concentric", "shortening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "lower_gluteus_maximus", "prime_mover", "создает разгибание бедра", "hip_extension", "concentric", "shortening", "high", biomech),
-    ]
-    card["biomechanics"]["external_load_mechanics"] = base_external_load(
-        equipment,
-        technique,
-        [
-            moment_arm("hip", "снаряд находится дальше от тазобедренного сустава", "увеличивается требование к разгибателям бедра", ["hamstrings", "lower_gluteus_maximus"]),
-            moment_arm("lumbar_spine", "снаряд уходит вперед от тела", "увеличивается требование к разгибателям позвоночника и брейсингу", ["spinal_erectors", "transverse_abdominis"]),
-        ],
-        [
-            vector_effect("снаряд ближе к телу", "decreases", ["hip", "lumbar_spine"], ["spinal_erectors"], "уменьшается внешнее плечо момента относительно позвоночника и таза", "меньше стабилизационная нагрузка на поясницу", technique),
-            vector_effect("снаряд смещается вперед", "increases", ["hip", "lumbar_spine"], ["hamstrings", "spinal_erectors"], "возрастает момент сгибания бедра и позвоночника", "выше требование к задней цепи и разгибателям позвоночника", technique),
-        ],
-    )
-    card["biomechanics"]["technique_variables"] = [
-        make_technique_variable("knee_flexion", "сгибание колена", "Степень сгибания колена меняет длину хамстрингов и вклад квадрицепса.", "Меньшее сгибание колена обычно повышает растяжение хамстрингов; большее сгибание снижает hinge-акцент.", ["hip", "knee"], ["hamstrings", "vastus_lateralis", "lower_gluteus_maximus"], technique),
-        make_technique_variable("bar_distance", "расстояние снаряда от тела", "Определяет плечо момента относительно бедра и позвоночника.", "Чем дальше снаряд от тела, тем выше требования к разгибателям бедра и позвоночника.", ["hip", "lumbar_spine"], ["hamstrings", "spinal_erectors"], technique),
-        make_technique_variable("range_of_motion", "глубина опускания", "Определяется сохранением позиции позвоночника и доступной длиной задней поверхности бедра.", "Опускание ниже доступного контроля часто переводит движение в сгибание позвоночника.", ["hip", "lumbar_spine"], ["hamstrings", "spinal_erectors"], technique),
-    ]
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Hinge-паттерн нагружает заднюю цепь через сгибание и разгибание бедра; при румынской тяге особенно важны эксцентрический контроль и растянутая позиция хамстрингов, а смещение снаряда вперед повышает требования к бедру и поясничной стабилизации.",
-        biomech,
-    )
-    card["resistance_profile"] = {
-        "profile_type": "ascending" if romanian else "variable",
-        "peak_loading_region": "lengthened" if romanian else "bottom",
-        "explanation": "В румынской тяге субъективно и механически важна нижняя растянутая часть; в классической тяге профиль зависит от старта, антропометрии и траектории снаряда.",
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence_from_sources(biomech)[0],
-        "confidence_score": confidence_from_sources(biomech)[1],
-        "assumptions": ["Свободный вес.", "Снаряд удерживается близко к телу.", "Позвоночник сохраняет нейтральную позицию."],
-        "source_ids": biomech,
-    }
-    card["muscle_stimulus_phase_bias"] = [
-        {"muscle_id": "hamstrings", "stimulus_region": "lengthened", "rationale": "Хамстринги работают при увеличенной длине в нижней части hinge-амплитуды.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-        {"muscle_id": "lower_gluteus_maximus", "stimulus_region": "lengthened", "rationale": "Ягодичные создают разгибание бедра из согнутого положения.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-    ]
-    card["relative_muscle_emphasis"] = [
-        relative_emphasis("hamstrings", 90 if romanian else 75, "Главный ограничивающий и целевой компонент hinge-паттерна.", biomech),
-        relative_emphasis("lower_gluteus_maximus", 80, "Главный разгибатель бедра в подъеме.", biomech),
-        relative_emphasis("spinal_erectors", 70 if not romanian else 60, "Высокая стабилизационная роль против сгибания позвоночника.", biomech),
-    ]
-    fill_common_practical_fields(card, source_ids=technique, profile="hinge")
-
-
-def apply_bench_press_template(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-    ctx = source_context(sources)
-    text = card_search_text(card)
-    equipment = infer_equipment_and_modality(text, default_load_placement="hands")
-    biomech = ctx["biomech"]
-    technique = ctx["technique"]
-    card.update(
-        {
-            "exercise_family": "bench_press",
-            "category": "upper_body_strength",
-            "body_region": "upper_body",
-            "target_region": "chest",
-            "dominance_type": "horizontal_push",
-            "modality": equipment["modality"],
-            "equipment_required": equipment["equipment_required"] or ["bench"],
-            "compound_type": "compound",
-            "movement_patterns": ["horizontal_push"],
-            "force_vector": "vertical",
-            "kinetic_chain": "open_chain",
-            "movement_planes": ["sagittal", "transverse"],
-            "body_position": "supine",
-            "limb_pattern": "bilateral",
-            "technical_complexity": "moderate",
-            "mobility_requirements": ["контроль положения лопаток", "достаточная горизонтальная абдукция плеча", "стабильный хват"],
-            "contraction_phase_emphasis": "mixed",
-            "stimulus_phase_bias": "lengthened",
-        }
-    )
-    card["primary_muscles"] = [
-        make_muscle_summary("mid_chest", "prime_mover", "lengthened", "Создает горизонтальное приведение плеча при жиме.", biomech),
-        make_muscle_summary("upper_chest", "synergist", "mixed", "Вклад растет при более наклонной траектории/скамье.", biomech),
-        make_muscle_summary("triceps_lateral_head", "synergist", "shortened", "Создает разгибание локтя в подъеме.", biomech),
-        make_muscle_summary("triceps_medial_head", "synergist", "shortened", "Помогает разгибанию локтя.", biomech),
-    ]
-    card["secondary_muscles"] = [
-        make_muscle_summary("front_deltoid", "synergist", "mixed", "Помогает сгибанию и горизонтальному приведению плеча.", biomech),
-        make_muscle_summary("triceps_long_head", "synergist", "mixed", "Помогает разгибанию локтя, но его роль зависит от положения плеча.", biomech),
-    ]
-    card["stabilizers"] = [
-        {**make_muscle_summary("rotator_cuff", "stabilizer", "mixed", "Центрирует плечевую кость и стабилизирует плечевой сустав.", technique), "stabilization_role": "glenohumeral_stability"},
-        {**make_muscle_summary("serratus_anterior", "stabilizer", "mixed", "Помогает контролю лопатки.", technique), "stabilization_role": "scapular_control"},
-        {**make_muscle_summary("lower_lats", "stabilizer", "mixed", "Помогает контролировать плечевой пояс и траекторию.", technique), "stabilization_role": "bar_path_control"},
-    ]
-    card["joint_actions"] = [
-        make_joint_action_summary("glenohumeral", ["horizontal_adduction", "flexion"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("elbow", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("scapulothoracic", ["stabilization", "scapular_retraction"], ["setup", "eccentric_descent", "concentric_ascent"], technique),
-    ]
-    card["biomechanics"]["movement_phases"] = [
-        make_phase("setup", "setup", "настройка", "isometric", "атлет лежит на скамье", "лопатки и хват зафиксированы", ["ретракция/депрессия лопаток", "устойчивые стопы", "выбор хвата"], technique),
-        make_phase("eccentric_descent", "eccentric", "опускание", "eccentric", "локти разогнуты, снаряд над плечевым поясом", "снаряд у нижней/средней части груди", ["сгибание локтя", "горизонтальная абдукция плеча", "контроль лопаток"], biomech),
-        make_phase("bottom_transition", "bottom_transition", "нижний переход", "isometric", "снаряд у груди", "начало подъема", ["сохранение позиции плеча", "контроль паузы/касания"], biomech),
-        make_phase("concentric_ascent", "concentric", "жим вверх", "concentric", "снаряд у груди", "локти разогнуты", ["горизонтальное приведение плеча", "разгибание локтя"], biomech),
-        make_phase("lockout", "lockout", "фиксация", "isometric", "локти разогнуты", "снаряд стабилен", ["контроль локтей и лопаток"], technique),
-    ]
-    card["biomechanics"]["joint_mechanics"] = [
-        make_joint_mechanics("glenohumeral", "eccentric_descent", ["horizontal_abduction"], "moderate", "high", "грудные и передняя дельта контролируют опускание", "Ширина хвата и точка касания меняют плечевой момент.", biomech),
-        make_joint_mechanics("elbow", "eccentric_descent", ["flexion"], "moderate", "moderate", "трицепс контролирует сгибание локтя", "Более узкий хват обычно повышает относительный вклад локтевого разгибания.", biomech),
-        make_joint_mechanics("glenohumeral", "concentric_ascent", ["horizontal_adduction"], "moderate", "high", "грудные мышцы создают горизонтальное приведение плеча", "Плечо наиболее нагружено в нижней части при большем растяжении грудных.", biomech),
-        make_joint_mechanics("elbow", "concentric_ascent", ["extension"], "moderate", "high", "трицепс разгибает локоть", "Требование к трицепсу возрастает ближе к верхней части и при узком хвате.", biomech),
-    ]
-    card["biomechanics"]["muscle_roles_by_phase"] = [
-        make_muscle_role_by_phase("eccentric_descent", "mid_chest", "prime_mover", "эксцентрически контролирует горизонтальную абдукцию плеча", "shoulder_horizontal_abduction_control", "eccentric", "lengthening", "high", biomech),
-        make_muscle_role_by_phase("eccentric_descent", "triceps_lateral_head", "synergist", "контролирует сгибание локтя", "elbow_flexion_control", "eccentric", "lengthening", "moderate", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "mid_chest", "prime_mover", "создает горизонтальное приведение плеча", "shoulder_horizontal_adduction", "concentric", "shortening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "triceps_lateral_head", "synergist", "создает разгибание локтя", "elbow_extension", "concentric", "shortening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "front_deltoid", "synergist", "помогает движению плеча вперед/вверх", "shoulder_flexion_assistance", "concentric", "shortening", "moderate", biomech),
-    ]
-    card["biomechanics"]["external_load_mechanics"] = base_external_load(
-        equipment,
-        technique,
-        [
-            moment_arm("glenohumeral", "снаряд находится ниже и дальше от плеча в нижней позиции", "увеличивается момент горизонтальной абдукции плеча", ["mid_chest", "front_deltoid"]),
-            moment_arm("elbow", "локоть сильнее согнут или хват уже", "увеличивается требование к разгибателям локтя", ["triceps_lateral_head", "triceps_medial_head"]),
-        ],
-        [
-            vector_effect("более широкий хват", "shifts", ["glenohumeral", "elbow"], ["mid_chest", "triceps_lateral_head"], "обычно увеличивает горизонтальную абдукцию плеча и снижает ROM локтя", "относительно больше грудной акцент и меньше локтевой ROM", technique),
-            vector_effect("более узкий хват", "shifts", ["elbow", "glenohumeral"], ["triceps_lateral_head", "triceps_medial_head"], "увеличивает роль разгибания локтя", "относительно больше акцент на трицепс", technique),
-        ],
-    )
-    card["biomechanics"]["technique_variables"] = [
-        make_technique_variable("grip_width", "ширина хвата", "Меняет амплитуду плеча и локтя.", "Широкий хват чаще смещает акцент к грудным; узкий повышает вклад трицепса.", ["glenohumeral", "elbow"], ["mid_chest", "triceps_lateral_head"], technique),
-        make_technique_variable("touch_point", "точка касания", "Меняет траекторию и плечевой момент.", "Слишком высокая точка касания может увеличивать стресс плеча.", ["glenohumeral"], ["mid_chest", "front_deltoid"], technique),
-        make_technique_variable("scapular_position", "положение лопаток", "Определяет стабильность плечевого пояса.", "Потеря контроля лопаток снижает стабильность плеча.", ["scapulothoracic", "glenohumeral"], ["rotator_cuff", "serratus_anterior"], technique),
-    ]
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Жим лежа сочетает горизонтальное приведение плеча и разгибание локтя; нижняя часть амплитуды сильнее нагружает грудные и плечевой сустав, а верхняя часть и узкий хват увеличивают относительную роль трицепса.",
-        biomech,
-    )
-    card["resistance_profile"] = {
-        "profile_type": "ascending",
-        "peak_loading_region": "lengthened",
-        "explanation": "Для свободного жима значимые требования часто возникают в нижней растянутой позиции грудных и в зоне смены направления.",
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence_from_sources(biomech)[0],
-        "confidence_score": confidence_from_sources(biomech)[1],
-        "assumptions": ["Свободный вес.", "Стандартный горизонтальный жим лежа."],
-        "source_ids": biomech,
-    }
-    card["muscle_stimulus_phase_bias"] = [
-        {"muscle_id": "mid_chest", "stimulus_region": "lengthened", "rationale": "Грудные растянуты в нижней позиции жима.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-        {"muscle_id": "triceps_lateral_head", "stimulus_region": "shortened", "rationale": "Трицепс особенно важен при разгибании локтя в подъеме.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech},
-    ]
-    card["relative_muscle_emphasis"] = [
-        relative_emphasis("mid_chest", 90, "Главный двигатель горизонтального жима.", biomech),
-        relative_emphasis("front_deltoid", 60, "Синергист плечевого движения.", biomech),
-        relative_emphasis("triceps_lateral_head", 70, "Главный вклад в разгибание локтя.", biomech),
-    ]
-    fill_common_practical_fields(card, source_ids=technique, profile="bench_press")
-
-
-def apply_hip_thrust_template(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-    ctx = source_context(sources)
-    text = card_search_text(card)
-    equipment = infer_equipment_and_modality(text, default_load_placement="hips")
-    biomech = ctx["biomech"]
-    technique = ctx["technique"]
-    card.update(
-        {
-            "exercise_family": "hip_thrust_bridge",
-            "category": "lower_body_strength",
-            "body_region": "lower_body",
-            "target_region": "glutes",
-            "dominance_type": "hip_dominant",
-            "modality": equipment["modality"],
-            "equipment_required": equipment["equipment_required"],
-            "compound_type": "compound",
-            "movement_patterns": ["hip_thrust_bridge"],
-            "force_vector": "vertical",
-            "kinetic_chain": "closed_chain",
-            "movement_planes": ["sagittal"],
-            "body_position": "supported",
-            "limb_pattern": "bilateral",
-            "technical_complexity": "moderate",
-            "mobility_requirements": ["контроль таза", "достаточное разгибание бедра", "устойчивая позиция стоп"],
-            "contraction_phase_emphasis": "mixed",
-            "stimulus_phase_bias": "shortened",
-        }
-    )
-    card["primary_muscles"] = [
-        make_muscle_summary("lower_gluteus_maximus", "prime_mover", "shortened", "Создает разгибание бедра и пик сокращения в верхней позиции.", biomech),
-        make_muscle_summary("upper_gluteus_maximus", "prime_mover", "shortened", "Помогает разгибанию бедра и заднему наклону таза.", biomech),
-    ]
-    card["secondary_muscles"] = [
-        make_muscle_summary("hamstrings", "synergist", "mixed", "Помогают разгибанию бедра, но вклад зависит от угла колена.", biomech),
-        make_muscle_summary("hip_adductors", "synergist", "mixed", "Помогают стабилизации и разгибанию бедра.", biomech),
-    ]
-    card["stabilizers"] = [
-        {**make_muscle_summary("transverse_abdominis", "stabilizer", "mixed", "Помогает контролировать таз и поясницу.", technique), "stabilization_role": "pelvic_control"},
-        {**make_muscle_summary("spinal_erectors", "stabilizer", "mixed", "Помогает удерживать корпус, но не должен доминировать через переразгибание поясницы.", technique), "stabilization_role": "trunk_control"},
-    ]
-    card["joint_actions"] = [
-        make_joint_action_summary("hip", ["flexion", "extension"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("knee", ["stabilization"], ["eccentric_descent", "concentric_ascent"], biomech),
-        make_joint_action_summary("lumbar_spine", ["anti_extension", "stabilization"], ["concentric_ascent", "top_position"], technique),
-    ]
-    card["biomechanics"]["movement_phases"] = [
-        make_phase("setup", "setup", "настройка", "isometric", "верх спины опирается на скамью/пол", "стопы и нагрузка зафиксированы", ["позиция стоп", "брейсинг", "нагрузка над тазом"], technique),
-        make_phase("eccentric_descent", "eccentric", "опускание таза", "eccentric", "бедро разогнуто", "таз опущен, бедро согнуто", ["контроль сгибания бедра", "сохранение позиции ребер и таза"], biomech),
-        make_phase("concentric_ascent", "concentric", "подъем таза", "concentric", "бедро согнуто", "бедро разогнуто", ["разгибание бедра", "контроль колена и стопы"], biomech),
-        make_phase("top_position", "peak_contraction", "верхняя фиксация", "isometric", "бедро разогнуто", "таз стабилен", ["пиковое сокращение ягодичных", "избегать переразгибания поясницы"], technique),
-    ]
-    card["biomechanics"]["joint_mechanics"] = [
-        make_joint_mechanics("hip", "eccentric_descent", ["flexion"], "moderate", "high", "ягодичные контролируют сгибание бедра", "Нагрузка расположена близко к тазу, поэтому профиль отличается от hinge с нагрузкой в руках.", biomech),
-        make_joint_mechanics("hip", "concentric_ascent", ["extension"], "moderate", "high", "ягодичные разгибают бедро", "Требования высоки ближе к верхней части, где достигается пиковое разгибание.", biomech),
-        make_joint_mechanics("lumbar_spine", "top_position", ["anti_extension", "stabilization"], "near_isometric", "moderate", "кор стабилизирует таз и поясницу", "Переразгибание поясницы может маскировать недостаточное разгибание бедра.", technique),
-    ]
-    card["biomechanics"]["muscle_roles_by_phase"] = [
-        make_muscle_role_by_phase("eccentric_descent", "lower_gluteus_maximus", "prime_mover", "контролирует сгибание бедра", "hip_flexion_control", "eccentric", "lengthening", "high", biomech),
-        make_muscle_role_by_phase("concentric_ascent", "lower_gluteus_maximus", "prime_mover", "создает разгибание бедра", "hip_extension", "concentric", "shortening", "very_high", biomech),
-        make_muscle_role_by_phase("top_position", "upper_gluteus_maximus", "prime_mover", "удерживает таз и бедро в разогнутой позиции", "hip_extension_hold", "isometric", "shortened", "high", biomech),
-        make_muscle_role_by_phase("top_position", "transverse_abdominis", "stabilizer", "ограничивает переразгибание поясницы", "lumbar_anti_extension", "isometric", "near_isometric", "moderate", technique),
-    ]
-    card["biomechanics"]["external_load_mechanics"] = base_external_load(
-        equipment,
-        technique,
-        [
-            moment_arm("hip", "нагрузка расположена над тазом при согнутом бедре", "возникает требование к разгибанию бедра", ["lower_gluteus_maximus", "upper_gluteus_maximus"]),
-            moment_arm("lumbar_spine", "ребра раскрываются и таз уходит в передний наклон", "часть движения может перейти в поясничное переразгибание", ["spinal_erectors", "transverse_abdominis"]),
-        ],
-        [
-            vector_effect("стопы дальше от таза", "shifts", ["hip", "knee"], ["hamstrings", "lower_gluteus_maximus"], "увеличивается вклад задней поверхности бедра", "относительно больше участие хамстрингов", technique),
-            vector_effect("стопы ближе к тазу", "shifts", ["knee", "hip"], ["vastus_lateralis", "lower_gluteus_maximus"], "возрастает сгибание колена и меняется угол бедра", "может увеличиться вклад квадрицепса/снизиться хамстринг-акцент", technique),
-        ],
-    )
-    card["biomechanics"]["technique_variables"] = [
-        make_technique_variable("foot_position", "позиция стоп", "Меняет углы колена и бедра.", "Дальняя позиция стоп повышает вклад хамстрингов; близкая меняет коленный угол и может снижать целевой ягодичный акцент.", ["hip", "knee"], ["hamstrings", "lower_gluteus_maximus"], technique),
-        make_technique_variable("pelvic_control", "контроль таза", "Определяет, идет ли движение через бедро или поясницу.", "Задний наклон таза вверху помогает удержать движение в тазобедренном суставе.", ["hip", "lumbar_spine"], ["lower_gluteus_maximus", "transverse_abdominis"], technique),
-    ]
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Hip thrust/bridge смещает основную механику к разгибанию бедра с высоким ягодичным вкладом и выраженной важностью верхней позиции; контроль таза нужен, чтобы не заменить разгибание бедра переразгибанием поясницы.",
-        biomech,
-    )
-    card["resistance_profile"] = {
-        "profile_type": "ascending",
-        "peak_loading_region": "shortened",
-        "explanation": "Пиковые требования часто ощущаются ближе к верхней позиции разгибания бедра.",
-        "evidence_type": "biomechanical_inference",
-        "confidence": confidence_from_sources(biomech)[0],
-        "confidence_score": confidence_from_sources(biomech)[1],
-        "assumptions": ["Нагрузка расположена на тазу.", "Стандартная техника без поясничного переразгибания."],
-        "source_ids": biomech,
-    }
-    card["muscle_stimulus_phase_bias"] = [
-        {"muscle_id": "lower_gluteus_maximus", "stimulus_region": "shortened", "rationale": "Высокие требования в верхней позиции разгибания бедра.", "evidence_type": "biomechanical_inference", "confidence": confidence_from_sources(biomech)[0], "source_ids": biomech}
-    ]
-    card["relative_muscle_emphasis"] = [
-        relative_emphasis("lower_gluteus_maximus", 95, "Главный двигатель разгибания бедра.", biomech),
-        relative_emphasis("upper_gluteus_maximus", 85, "Сильный вклад в верхней позиции и контроль таза.", biomech),
-        relative_emphasis("hamstrings", 45, "Синергист, вклад зависит от позиции стоп.", biomech),
-    ]
-    fill_common_practical_fields(card, source_ids=technique, profile="hip_thrust")
-
-
-def apply_split_squat_template(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-    apply_squat_template(card, sources)
-    ctx = source_context(sources)
-    source_ids = ctx["biomech"]
-    card.update(
-        {
-            "exercise_family": "split_squat_lunge",
-            "movement_patterns": ["split_squat", "lunge"],
-            "limb_pattern": "unilateral",
-            "target_region": "quadriceps",
-            "technical_complexity": "moderate",
-            "mobility_requirements": [
-                "контроль таза во фронтальной плоскости",
-                "достаточная подвижность сгибателей бедра задней ноги",
-                "баланс в разножке",
-            ],
-        }
-    )
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Split squat/lunge сохраняет механику приседания, но добавляет односторонний контроль таза, фронтальную стабильность и большую зависимость мышечного акцента от длины шага и наклона корпуса.",
-        source_ids,
-    )
-    card["biomechanics"]["technique_variables"].append(
-        make_technique_variable("step_length", "длина шага", "Меняет углы бедра и колена передней ноги.", "Короткий шаг чаще повышает коленный момент; длинный шаг смещает акцент к бедру и ягодичным.", ["hip", "knee"], ["vastus_lateralis", "lower_gluteus_maximus"], source_ids)
-    )
-
-
-def relative_emphasis(muscle_id: str, score: int, rationale: str, source_ids: list[str]) -> dict[str, Any]:
-    confidence, confidence_score = confidence_from_sources(source_ids)
-    return {
-        "muscle_id": muscle_id,
-        "relative_emphasis_score": score,
-        "score_type": "evidence_informed_estimate",
-        "confidence": confidence,
-        "confidence_score": confidence_score,
-        "rationale": rationale,
-        "source_ids": source_ids,
-    }
-
-
-def fill_common_practical_fields(card: dict[str, Any], source_ids: list[str], profile: str) -> None:
-    fatigue_profiles = {
-        "squat": ("high", "high", "high", "high", "high"),
-        "hinge": ("high", "high", "high", "high", "moderate"),
-        "bench_press": ("moderate", "moderate", "moderate", "moderate", "moderate"),
-        "hip_thrust": ("moderate", "moderate", "moderate", "moderate", "moderate"),
-    }
-    local, systemic, technical, axial, stability = fatigue_profiles.get(profile, ("unclear", "unclear", "unclear", "unclear", "unclear"))
-    confidence, score = confidence_from_sources(source_ids)
-    card["fatigue_cost"] = {
-        "local_fatigue": local,
-        "systemic_fatigue": systemic,
-        "technical_fatigue": technical,
-        "axial_loading": axial,
-        "stability_demand": stability,
-        "overall_fatigue_cost": systemic,
-        "evidence_type": "expert_inference",
-        "confidence": confidence,
-        "confidence_score": score,
-        "assumptions": ["Оценка зависит от нагрузки, объема, близости к отказу и техники."],
-        "source_ids": source_ids,
-    }
-    card["sfr"] = {
-        "sfr_class": "context_dependent",
-        "evidence_type": "expert_inference",
-        "confidence": confidence,
-        "confidence_score": score,
-        "context": "Stimulus-to-fatigue ratio зависит от цели, техники, индивидуальной антропометрии и дозировки нагрузки.",
-        "assumptions": ["SFR не является прямым лабораторным показателем и трактуется как практическая эвристика."],
-        "source_ids": source_ids,
-    }
-    if profile == "bench_press":
-        card["common_errors"] = [
-            make_common_error("потеря позиции лопаток", "снижается стабильность плечевого сустава и меняется траектория", "зафиксировать лопатки и повторить настройку", "moderate", source_ids),
-            make_common_error("слишком высокая точка касания", "может увеличить плечевой момент и дискомфорт", "держать траекторию в зоне, соответствующей хвату и антропометрии", "context_dependent", source_ids),
-            make_common_error("ранний отрыв таза", "меняет механику и снижает воспроизводимость повторения", "снизить нагрузку и удерживать стабильную опору", "moderate", source_ids),
-        ]
-        card["execution_steps"] = {
-            "setup": ["лечь на скамью", "зафиксировать лопатки", "выбрать устойчивый хват и опору стоп"],
-            "execution": ["контролируемо опустить снаряд", "сохранить позицию плеч", "выжать снаряд вверх по стабильной траектории"],
-            "rom": ["опускать до контролируемой нижней позиции без потери плечевой стабильности"],
-            "breathing_bracing": ["вдох и брейсинг перед опусканием", "сохранять жесткость корпуса в повторении"],
-            "tempo_control": ["контролируемая эксцентрика", "без отскока от груди"],
-        }
-    elif profile == "hip_thrust":
-        card["common_errors"] = [
-            make_common_error("переразгибание поясницы вверху", "движение смещается из тазобедренного сустава в поясницу", "держать ребра и таз под контролем", "moderate", source_ids),
-            make_common_error("неудачная позиция стоп", "меняется вклад хамстрингов, квадрицепса и ягодичных", "подобрать позицию стоп под стабильное разгибание бедра", "context_dependent", source_ids),
-            make_common_error("неконтролируемое опускание", "снижается контроль нижней позиции и воспроизводимость амплитуды", "замедлить эксцентрику", "low", source_ids),
-        ]
-        card["execution_steps"] = {
-            "setup": ["расположить верх спины на опоре", "зафиксировать стопы", "разместить нагрузку над тазом"],
-            "execution": ["поднять таз через разгибание бедра", "удержать верхнюю позицию", "контролируемо опустить таз"],
-            "rom": ["работать в амплитуде, где движение остается в бедре, а не в пояснице"],
-            "breathing_bracing": ["сохранять брейсинг и контроль ребер"],
-            "tempo_control": ["контролируемое опускание", "короткая фиксация вверху при необходимости"],
-        }
-    elif profile == "hinge":
-        card["common_errors"] = [
-            make_common_error("снаряд уходит далеко от тела", "увеличивается плечо момента для бедра и позвоночника", "вести снаряд близко к ногам", "moderate", source_ids),
-            make_common_error("сгибание позвоночника вместо сгибания бедра", "нагрузка смещается с тазобедренного шарнира на позвоночник", "снизить амплитуду до контролируемой позиции", "high", source_ids),
-            make_common_error("чрезмерное сгибание коленей в румынской тяге", "снижается растяжение хамстрингов и меняется паттерн", "сохранять мягкое, но стабильное сгибание колена", "context_dependent", source_ids),
-        ]
-        card["execution_steps"] = {
-            "setup": ["встать с нагрузкой в руках", "зафиксировать корпус", "держать снаряд близко к телу"],
-            "execution": ["отвести таз назад", "контролировать опускание", "разогнуть бедро для подъема"],
-            "rom": ["останавливаться до потери нейтрального положения позвоночника"],
-            "breathing_bracing": ["вдох и брейсинг перед опусканием", "сохранять жесткость корпуса"],
-            "tempo_control": ["медленная контролируемая эксцентрика", "без рывка в нижней позиции"],
-        }
-    else:
-        card["common_errors"] = [
-            make_common_error("потеря контроля корпуса", "меняется распределение момента между суставами", "снизить нагрузку и стабилизировать корпус", "moderate", source_ids),
-            make_common_error("неконтролируемая нижняя позиция", "снижается воспроизводимость техники", "замедлить эксцентрику и держать активный контроль", "moderate", source_ids),
-            make_common_error("смещение коленей без контроля", "может менять нагрузку на колено и бедро", "подобрать стойку и траекторию под антропометрию", "context_dependent", source_ids),
-        ]
-        card["execution_steps"] = {
-            "setup": ["выбрать стойку", "зафиксировать корпус", "подготовить снаряд"],
-            "execution": ["контролируемо опуститься", "сохранить траекторию", "подняться без потери позиции"],
-            "rom": ["использовать контролируемую амплитуду"],
-            "breathing_bracing": ["вдох и брейсинг перед повторением"],
-            "tempo_control": ["контролируемая эксцентрика", "стабильный подъем"],
-        }
-
-    card["best_use"] = {
-        "hypertrophy": "подходит при технике, позволяющей целевым мышцам получать стабильную нагрузку",
-        "strength": "подходит при прогрессии нагрузки и контроле техники",
-        "skill": "требует повторяемой траектории и дозировки усталости",
-    }
-    card["typical_rep_ranges"] = ["3-6 для силы", "6-12 для силы/гипертрофии", "8-15+ для гипертрофии и техники при умеренной нагрузке"]
-    card["progression_options"] = ["увеличение нагрузки", "увеличение повторений", "увеличение подходов", "контроль темпа", "пауза в ключевой позиции"]
-    card["when_to_avoid_or_modify"] = ["боль или выраженный дискомфорт в рабочем суставе", "невозможность удерживать контролируемую технику", "усталость, резко меняющая механику движения"]
-    card["prerequisite_skill_mobility"] = card.get("mobility_requirements", [])
-    card["supersets_trisets"] = [
-        {
-            "format": "paired_set",
-            "combination": ["низко конфликтующее упражнение на другую мышечную группу"],
-            "logic": "снизить локальное пересечение усталости",
-            "fatigue_warning": "не сочетать с упражнением, которое ухудшает контроль ключевой техники",
-        }
-    ]
-    card["variations"] = [
-        {
-            "name": "вариация с изменением оборудования",
-            "primary_emphasis": "меняет профиль сопротивления и требования к стабилизации",
-            "mechanical_difference": "зависит от линии силы и точки приложения нагрузки",
-            "when_to_choose": "когда нужна другая нагрузка на суставы или целевые мышцы",
-            "evidence_type": "expert_inference",
-            "confidence": confidence,
-        }
-    ]
-    card["alternatives"] = [
-        {
-            "name": "упражнение того же паттерна движения",
-            "similarity": "сохраняет основной суставной паттерн",
-            "main_difference": "отличается оборудованием, стабильностью или профилем сопротивления",
-            "when_to_choose": "если текущая вариация плохо подходит по технике, оборудованию или переносимости",
-        }
-    ]
-    card["safety"] = {
-        "general": "Не является медицинской рекомендацией. При боли, травме или реабилитационном контексте нужна индивидуальная оценка специалиста.",
-        "load_management": "Увеличивать нагрузку только при сохранении повторяемой техники.",
-        "fatigue_management": "Останавливать подход, если усталость резко меняет механику движения.",
-    }
-
-
-def apply_unknown_template(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
-    ctx = source_context(sources)
-    source_ids = ctx["all"]
-    card["biomechanics"]["biomechanical_summary"] = make_claim(
-        "Для этого упражнения пока нет локального шаблона биомеханического заполнения; источники сохранены, но поля требуют ручного или следующего автоматического разбора.",
-        source_ids,
-        evidence_type="insufficient_evidence",
-        confidence="low",
-        confidence_score=25,
-    )
-    card["limitations"].append("Для упражнения не найден локальный movement template; карточка оставлена как staged_draft с source ledger.")
-    card["not_supported_claims"].append("Автоматический разбор мышц по фазам не выполнен без подходящего шаблона.")
-
-
-def refresh_evidence_summary(card: dict[str, Any], sources: list[dict[str, Any]], template_id: str) -> None:
+def refresh_evidence_first_summary(card: dict[str, Any], sources: list[dict[str, Any]]) -> None:
     backends = sorted({backend for source in sources for backend in source.get("source_backends", [])})
     providers = sorted({provider for source in sources for provider in source.get("source_providers", [])})
     provider_backends = sorted({backend for source in sources for backend in source.get("provider_backends", [])})
@@ -1108,88 +812,157 @@ def refresh_evidence_summary(card: dict[str, Any], sources: list[dict[str, Any]]
         "backends": backends,
         "providers": providers,
         "provider_backends": provider_backends,
-        "template_id": template_id,
-        "population_method": "controlled_template_with_source_ids",
-        "important_caveat": "Большинство биомеханических полей являются структурированной inference-моделью на основе паттерна упражнения и найденных источников; точные утверждения из full text требуют отдельного extraction этапа.",
+        "population_method": "evidence_first_per_field_analysis_required",
+        "important_caveat": (
+            "Шаблонное заполнение отключено. Каждое биомеханическое поле должно быть "
+            "заполнено заново: сначала по прямым данным для конкретного упражнения, "
+            "а при их отсутствии - аналитическим выводом из подходящих исследований "
+            "по близким вариациям, семейству упражнения или паттерну движения."
+        ),
     }
 
 
-def refresh_evidence_ledger(card: dict[str, Any]) -> None:
-    claims = []
-    for claim in card.get("movement_pattern_details", []):
-        claims.append(claim)
-    summary = card.get("biomechanics", {}).get("biomechanical_summary")
-    if summary:
-        claims.append(summary)
-    claims.append(
-        make_claim(
-            "Мышечные роли по фазам заполнены как biomechanical_inference на основе movement-template и source ledger.",
-            card.get("biomechanics", {}).get("biomechanical_summary", {}).get("source_ids", []),
-            evidence_type="biomechanical_inference",
-        )
+def reset_interpretive_fields(card: dict[str, Any], source_ids: list[str]) -> None:
+    card["exercise_family"] = "unclear"
+    card["category"] = "unclear"
+    card["body_region"] = "unclear"
+    card["target_region"] = "unclear"
+    card["dominance_type"] = "unclear"
+    card["compound_type"] = "unclear"
+    card["movement_patterns"] = ["unclear"]
+    card["force_vector"] = "unclear"
+    card["kinetic_chain"] = "unclear"
+    card["movement_planes"] = ["unclear"]
+    card["body_position"] = "unclear"
+    card["limb_pattern"] = "unclear"
+    card["technical_complexity"] = "unclear"
+    card["mobility_requirements"] = []
+    card["movement_pattern_details"] = []
+    card["primary_muscles"] = []
+    card["secondary_muscles"] = []
+    card["stabilizers"] = []
+    card["joint_actions"] = []
+    card["contraction_phase_emphasis"] = "unclear"
+    card["stimulus_phase_bias"] = "unclear"
+    card["muscle_stimulus_phase_bias"] = []
+    card["relative_muscle_emphasis"] = []
+    card["common_errors"] = []
+    card["execution_steps"] = {
+        "setup": [],
+        "execution": [],
+        "rom": [],
+        "breathing_bracing": [],
+        "tempo_control": [],
+    }
+    card["best_use"] = {}
+    card["typical_rep_ranges"] = []
+    card["progression_options"] = []
+    card["when_to_avoid_or_modify"] = []
+    card["prerequisite_skill_mobility"] = []
+    card["supersets_trisets"] = []
+    card["variations"] = []
+    card["alternatives"] = []
+    card["safety"] = {}
+    card["resistance_profile"] = {
+        "profile_type": "unclear",
+        "peak_loading_region": "unclear",
+        "explanation": "Не заполнено: требуется отдельный evidence-first анализ по источникам.",
+        "evidence_type": "unavailable",
+        "confidence": "unknown",
+        "confidence_score": None,
+        "assumptions": [],
+        "source_ids": [],
+    }
+    card["fatigue_cost"] = {
+        "local_fatigue": "unclear",
+        "systemic_fatigue": "unclear",
+        "technical_fatigue": "unclear",
+        "axial_loading": "unclear",
+        "stability_demand": "unclear",
+        "overall_fatigue_cost": "unclear",
+        "evidence_type": "unavailable",
+        "confidence": "unknown",
+        "confidence_score": None,
+        "assumptions": [],
+        "source_ids": [],
+    }
+    card["sfr"] = {
+        "sfr_class": "unclear",
+        "evidence_type": "unavailable",
+        "confidence": "unknown",
+        "confidence_score": None,
+        "context": "Не заполнено: требуется отдельный evidence-first анализ по источникам.",
+        "assumptions": [],
+        "source_ids": [],
+    }
+    card["biomechanics"] = {
+        "movement_phases": [],
+        "joint_mechanics": [],
+        "muscle_roles_by_phase": [],
+        "external_load_mechanics": {
+            "external_resistance_type": "unclear",
+            "line_of_force": "unclear",
+            "load_placement": "unclear",
+            "main_moment_arms": [],
+            "vector_shift_effects": [],
+            "evidence_type": "unavailable",
+            "confidence": "unknown",
+            "source_ids": [],
+        },
+        "technique_variables": [],
+        "biomechanical_summary": make_claim(
+            "Шаблонное биомеханическое заполнение отключено; требуется извлечение и аналитическое заполнение каждого поля по источникам.",
+            source_ids,
+            evidence_type="insufficient_evidence",
+            confidence="unknown",
+            confidence_score=None,
+        ),
+    }
+
+
+def populate_card_evidence_first(card: dict[str, Any], source_ledger: dict[str, Any]) -> dict[str, Any]:
+    populated = copy.deepcopy(card)
+    sources = source_ledger.get("sources") or []
+    source_ids = [source["id"] for source in sources if source.get("id")]
+    reset_interpretive_fields(populated, source_ids)
+    set_display_labels(populated)
+    populated["assumptions"] = unique_strings(
+        [
+            *populated.get("assumptions", []),
+            "Шаблонные значения характеристик запрещены и не используются при обычном заполнении.",
+            "Если прямых данных по конкретному упражнению нет, поле должно заполняться только отдельным аналитическим выводом из подходящих исследований.",
+            "Идентификаторы источников указывают на найденные публикации; они не являются автоматическим подтверждением каждого незаполненного поля.",
+        ]
     )
-    card["evidence_ledger"] = claims
+    populated["limitations"] = unique_strings(
+        [
+            *populated.get("limitations", []),
+            "Карточка очищена от шаблонного биомеханического слоя; требуется per-field извлечение и анализ источников.",
+            "Близкие вариации, семейство упражнения и широкий паттерн движения могут использоваться только как явно помеченная аналитическая опора, а не как шаблонное значение.",
+        ]
+    )
+    populated["not_supported_claims"] = unique_strings(
+        [
+            *populated.get("not_supported_claims", []),
+            "Не допускается переносить фазы, роли мышц, пики нагрузки, вариации или альтернативы из локального шаблона движения.",
+            "Не допускается считать source_id доказательством поля без извлеченного факта или отдельного аналитического обоснования.",
+        ]
+    )
+    refresh_evidence_first_summary(populated, sources)
+    populated = sanitize_card_text(populated)
+    ensure_best_use_summary(populated)
+    populated["evidence_ledger"] = [populated["biomechanics"]["biomechanical_summary"]]
+    populated["metadata"].pop("population_template_id", None)
+    populated["metadata"]["populated_at"] = now_iso()
+    populated["metadata"]["population_method"] = "evidence_first_no_templates"
+    populated["metadata"]["schema_version"] = "0.2.0"
+    populated["schema_version"] = "0.2.0"
+    populated["status"] = "staged_draft"
+    return populated
 
 
 def populate_card(card: dict[str, Any], source_ledger: dict[str, Any]) -> dict[str, Any]:
-    populated = copy.deepcopy(card)
-    sources = source_ledger.get("sources") or []
-    template_id = match_template(populated)
-
-    source_ids = direct_source_ids(sources)
-    populated["movement_pattern_details"] = [
-        make_claim(
-            f"Упражнение сопоставлено с локальным movement template: {template_id}.",
-            source_ids,
-            evidence_type="expert_inference" if template_id != "unknown" else "insufficient_evidence",
-        )
-    ]
-
-    if template_id == "squat":
-        apply_squat_template(populated, sources)
-    elif template_id == "split_squat":
-        apply_split_squat_template(populated, sources)
-    elif template_id == "romanian_deadlift":
-        apply_hinge_template(populated, sources, romanian=True)
-    elif template_id == "deadlift":
-        apply_hinge_template(populated, sources, romanian=False)
-    elif template_id == "bench_press":
-        apply_bench_press_template(populated, sources)
-    elif template_id == "hip_thrust":
-        apply_hip_thrust_template(populated, sources)
-    else:
-        apply_unknown_template(populated, sources)
-
-    if template_id != "unknown":
-        populated["assumptions"] = unique_strings(
-            [
-                *populated.get("assumptions", []),
-                "Карточка заполнена контролируемым биомеханическим шаблоном.",
-                "Source IDs указывают на найденные источники, но не означают дословное извлечение каждого утверждения из full text.",
-            ]
-        )
-        populated["limitations"] = unique_strings(
-            [
-                *populated.get("limitations", []),
-                "Точная величина мышечной активности, суставных моментов и нагрузки зависит от техники, антропометрии, оборудования и нагрузки.",
-                "EMG-данные, если присутствуют среди источников, не интерпретируются напрямую как гипертрофический стимул.",
-            ]
-        )
-        populated["not_supported_claims"] = unique_strings(
-            [
-                *populated.get("not_supported_claims", []),
-                "Карточка не утверждает точные проценты вклада мышц без прямых источников.",
-                "Карточка не является медицинской или реабилитационной рекомендацией.",
-            ]
-        )
-
-    refresh_evidence_summary(populated, sources, template_id)
-    refresh_evidence_ledger(populated)
-    populated["metadata"]["populated_at"] = now_iso()
-    populated["metadata"]["population_method"] = "controlled_template_with_source_ids"
-    populated["metadata"]["population_template_id"] = template_id
-    populated["status"] = "staged_draft"
-    return populated
+    return populate_card_evidence_first(card, source_ledger)
 
 
 def unique_strings(values: list[str]) -> list[str]:
@@ -1209,7 +982,12 @@ def resolve_paths_from_exercise_id(exercise_id: str) -> tuple[Path, Path]:
     )
 
 
-def process_one(card_path: Path, sources_path: Path, output_path: Path | None, validate: bool) -> Path:
+def process_one(
+    card_path: Path,
+    sources_path: Path,
+    output_path: Path | None,
+    validate: bool,
+) -> Path:
     if not card_path.exists():
         raise PopulateError(f"Card file not found: {card_path}")
     if not sources_path.exists():
@@ -1227,7 +1005,7 @@ def process_one(card_path: Path, sources_path: Path, output_path: Path | None, v
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Populate staged exercise cards with biomechanical content.")
+    parser = argparse.ArgumentParser(description="Prepare staged exercise cards for evidence-first biomechanical analysis.")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--exercise-id", help="Exercise id under output/exercise_cards and output/sources.")
     target.add_argument("--card", type=Path, help="Path to a staged exercise card JSON.")

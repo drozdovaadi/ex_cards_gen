@@ -182,25 +182,50 @@ Then validate:
 
 ### 6.1 Populate Biomechanics
 
-After source staging, populate structured biomechanical fields:
+After source staging, prepare cards for structured biomechanical analysis:
 
 ```powershell
 python pipeline\populate_card.py --exercise-id romanian_deadlift
 python pipeline\populate_card.py --all
 ```
 
-The current population step uses controlled movement templates and source IDs from the merged open_literature + NCBI ledger, with optional Amass sources when available. Template-supported movement families include:
+Default population is now evidence-first and no-template. It must not write final
+movement phases, muscle roles, load peaks, load-vector shifts, variations,
+alternatives, or programming claims from hardcoded local movement templates.
 
-- squat
-- split squat / lunge
-- Romanian deadlift / hinge
-- deadlift
-- bench press
-- hip thrust / glute bridge
+Field-filling priority:
 
-If no template matches, the card remains a staged draft and records the limitation explicitly.
+1. Direct evidence for the exact exercise variation.
+2. Close-variation evidence, explicitly marked as indirect or analytical.
+3. Same-family evidence, explicitly marked as analytical and lower priority.
+4. Broad movement-pattern evidence, only when no stronger source exists and only
+   with a clear caveat.
+
+If direct data for a field is unavailable, the field may still be filled, but
+only by a separate analytical step based on suitable studies. The card must
+state which evidence tier was used and must not silently copy local template
+values.
+
+The old controlled-template route has been removed from the command path.
+Production cards must use the evidence-first/no-template route only.
+
+The population step also applies a card-quality contract:
+
+- `display_labels.dominance_label_ru`, `display_labels.load_phase_label_ru`, and `display_labels.contraction_phase_label_ru` must be present for human-readable Russian display.
+- Movement phases must include detailed start/end positions and at least three key events.
+- Load peaks and vector shifts must explain the mechanical consequence, not only name the direction of change.
+- Vector-shift fields must explicitly describe how the line of force and external moment arm change, and which muscles receive more or less emphasis.
+- `execution_steps` must remain a visible `Пошаговая техника выполнения` block with setup, execution, range-of-motion, breathing/body-pressure, and tempo-control steps.
+- `supersets_trisets` must remain a visible `Суперсеты и трисеты` block with concrete combinations, advantages, and fatigue/technique warnings.
+- `best_use.summary` is required and must be the final human-facing `Когда выбирать это упражнение` summary: what the exercise is, when to choose it, what it substitutes for, and what tradeoff suggests a different exercise.
+- `variations`, `alternatives`, and `supersets_trisets` must contain concrete examples with practical tradeoffs.
+- User-facing Russian prose must avoid mixed-language coaching jargon such as `брейсинг`, `аксессуарное упражнение`, `hinge`, `open hip`, `lockout`, and similar terms. Do not use `шарнир`; use `наклон через тазобедренный сустав`, `сгибание и разгибание в тазобедренном суставе`, or another natural Russian phrase.
+- Do not write source-synthesis phrases as the claim itself, for example `Систематический обзор ... поддерживает ...`. The field should state the biomechanical fact; source support belongs in evidence/source fields.
 
 ### 7. Save Outputs
+
+Default destination for generated exercise cards is `output/exercise_cards/`.
+Use another card output directory only when the user explicitly requests it.
 
 For each exercise:
 
