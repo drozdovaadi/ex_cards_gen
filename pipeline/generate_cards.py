@@ -33,6 +33,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from movement_decomposition import (
+    build_movement_decomposition,
+    decomposition_summary,
+    save_decomposition,
+)
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = PROJECT_ROOT / "schemas" / "exercise_card.schema.json"
@@ -90,6 +96,7 @@ class ExerciseEntry:
     exercise_name: str
     exercise_id: str
     aliases: list[str]
+    notes: str = ""
 
 
 class PipelineError(RuntimeError):
@@ -141,6 +148,21 @@ def parse_exercise_tokens(raw_value: str) -> ExerciseEntry | None:
     if not tokens:
         return None
 
+    note_prefixes = ("notes:", "note:", "technique:", "техника:", "вводные:", "заметки:")
+    notes: list[str] = []
+    clean_tokens: list[str] = []
+    for token in tokens:
+        lowered = token.lower()
+        matched_prefix = next((prefix for prefix in note_prefixes if lowered.startswith(prefix)), None)
+        if matched_prefix:
+            notes.append(normalize_space(token[len(matched_prefix) :]))
+        else:
+            clean_tokens.append(token)
+
+    tokens = clean_tokens
+    if not tokens:
+        return None
+
     raw_name = tokens[0]
     english_alias = next((token for token in tokens if looks_english(token)), None)
     russian_name = raw_name
@@ -156,6 +178,7 @@ def parse_exercise_tokens(raw_value: str) -> ExerciseEntry | None:
         exercise_name=exercise_name,
         exercise_id=slugify(english_alias or raw_name),
         aliases=aliases,
+        notes=normalize_space(" ".join(notes)),
     )
 
 
@@ -192,7 +215,16 @@ def load_exercises_from_csv(input_path: Path) -> list[ExerciseEntry]:
                     or ""
                 )
                 aliases = row.get("aliases") or row.get("alias") or row.get("english_name") or ""
-                raw = " | ".join(part for part in [name, aliases] if part)
+                notes = (
+                    row.get("notes")
+                    or row.get("note")
+                    or row.get("technique")
+                    or row.get("description")
+                    or row.get("вводные")
+                    or row.get("техника")
+                    or ""
+                )
+                raw = " | ".join(part for part in [name, aliases, f"notes: {notes}" if notes else ""] if part)
                 entry = parse_exercise_tokens(raw)
                 if entry:
                     entries.append(entry)
@@ -363,264 +395,16 @@ def entry_query_text(entry: ExerciseEntry) -> str:
     return normalize_title(" ".join([entry.exercise_name, *entry.aliases, entry.raw_name]))
 
 
-def generated_profile_terms(entry: ExerciseEntry) -> dict[str, list[str]]:
-    text = entry_query_text(entry)
-    specific: list[str] = []
-    family: list[str] = []
-    pattern: list[str] = []
-
-    def has(*needles: str) -> bool:
-        return all(needle in text for needle in needles)
-
-    if has("squat"):
-        pattern.extend(["squat"])
-        if has("low", "bar"):
-            specific.extend(["low-bar back squat", "low bar back squat", "low bar squat"])
-            family.extend(["barbell back squat", "back squat"])
-        elif has("front"):
-            specific.extend(["barbell front squat", "front squat"])
-            family.extend(["barbell squat"])
-        elif has("hack"):
-            specific.extend(["sled hack squat", "hack squat"])
-            family.extend(["machine squat", "sled squat"])
-        elif has("split"):
-            specific.extend(["dumbbell split squat", "split squat"])
-            family.extend(["unilateral squat", "lunge"])
-        else:
-            family.extend(["barbell squat", "back squat"])
-
-    if has("leg", "press"):
-        specific.extend(["sled 45 degree leg press", "45-degree leg press", "45 degree leg press"])
-        family.extend(["leg press", "sled leg press"])
-        pattern.extend(["squat", "knee extension"])
-
-    if has("leg", "extension"):
-        specific.extend(["lever leg extension", "machine leg extension"])
-        family.extend(["leg extension"])
-        pattern.extend(["knee extension"])
-
-    if has("lunge"):
-        specific.extend(["dumbbell lunge", "walking lunge", "forward lunge"])
-        family.extend(["lunge", "split squat", "unilateral squat"])
-        pattern.extend(["squat", "unilateral knee dominant"])
-
-    if has("deadlift"):
-        pattern.extend(["hip hinge"])
-        if has("romanian"):
-            specific.extend(["Romanian deadlift", "RDL", "romanian dead lift"])
-            family.extend(["deadlift", "hip hinge"])
-        else:
-            specific.extend(["barbell deadlift", "conventional deadlift"])
-            family.extend(["deadlift"])
-
-    if has("hip", "thrust") or has("glute", "bridge"):
-        specific.extend(["barbell hip thrust", "hip thrust"])
-        family.extend(["hip thrust", "glute bridge"])
-        pattern.extend(["hip extension"])
-
-    if has("glute", "kickback"):
-        specific.extend(["cable glute kickback", "glute kickback"])
-        family.extend(["hip extension exercise"])
-        pattern.extend(["hip extension"])
-
-    if has("leg", "curl"):
-        if has("lying"):
-            specific.extend(["lying leg curl", "prone leg curl", "lever lying leg curl"])
-        elif has("seated"):
-            specific.extend(["seated leg curl", "lever seated leg curl"])
-        family.extend(["leg curl", "hamstring curl"])
-        pattern.extend(["knee flexion"])
-
-    if has("back", "extension"):
-        specific.extend(["back extension", "lever back extension", "hyperextension"])
-        family.extend(["back extension", "hip extension exercise"])
-        pattern.extend(["hip hinge", "trunk extension"])
-
-    if has("hip", "abduction"):
-        specific.extend(["seated hip abduction", "machine hip abduction"])
-        family.extend(["hip abduction"])
-        pattern.extend(["hip abduction"])
-
-    if has("hip", "adduction"):
-        specific.extend(["seated hip adduction", "machine hip adduction"])
-        family.extend(["hip adduction"])
-        pattern.extend(["hip adduction"])
-
-    if has("calf", "raise"):
-        if has("seated"):
-            specific.extend(["seated calf raise", "lever seated calf raise"])
-            family.extend(["calf raise", "soleus exercise"])
-        elif has("standing"):
-            specific.extend(["standing calf raise", "lever standing calf raise"])
-            family.extend(["calf raise", "gastrocnemius exercise"])
-        else:
-            family.extend(["calf raise"])
-        pattern.extend(["ankle plantar flexion"])
-
-    if has("bench", "press"):
-        pattern.extend(["horizontal press"])
-        if has("incline"):
-            if has("barbell"):
-                specific.extend(["barbell incline bench press", "incline bench press"])
-            elif has("dumbbell"):
-                specific.extend(["dumbbell incline bench press", "incline dumbbell bench press", "incline bench press"])
-            else:
-                specific.extend(["incline bench press"])
-            family.extend(["bench press", "chest press"])
-        elif has("dumbbell"):
-            specific.extend(["dumbbell bench press"])
-            family.extend(["bench press", "chest press"])
-        else:
-            specific.extend(["barbell bench press", "bench press"])
-            family.extend(["chest press"])
-
-    if has("dip"):
-        specific.extend(["chest dip", "parallel bar dip"])
-        family.extend(["dip", "chest press"])
-        pattern.extend(["vertical press", "shoulder extension"])
-
-    if has("push", "up") or "pushup" in text:
-        specific.extend(["push-up", "push up"])
-        family.extend(["push-up", "horizontal press"])
-        pattern.extend(["horizontal press"])
-
-    if has("fly"):
-        if has("reverse") or has("rear"):
-            specific.extend(["reverse fly", "rear lateral raise", "rear delt fly"])
-            family.extend(["reverse fly", "rear delt raise"])
-            pattern.extend(["shoulder horizontal abduction"])
-        else:
-            specific.extend(["dumbbell fly", "chest fly"])
-            family.extend(["chest fly"])
-            pattern.extend(["shoulder horizontal adduction"])
-
-    if has("pull", "up") or "pullup" in text:
-        specific.extend(["pull-up", "pull up"])
-        family.extend(["vertical pull", "lat pull"])
-        pattern.extend(["vertical pull"])
-
-    if has("chin", "up") or "chinup" in text:
-        specific.extend(["chin-up", "chin up"])
-        family.extend(["vertical pull", "pull-up"])
-        pattern.extend(["vertical pull"])
-
-    if has("pulldown"):
-        specific.extend(["lat pulldown", "cable pulldown"])
-        family.extend(["pulldown", "vertical pull"])
-        pattern.extend(["vertical pull"])
-
-    if has("row"):
-        pattern.extend(["horizontal pull"])
-        if has("seated"):
-            specific.extend(["seated cable row", "cable seated row"])
-            family.extend(["cable row", "row"])
-        elif contains_normalized_phrase(text, "t bar") or "tbar" in text:
-            specific.extend(["T-bar row", "plate-loaded T-bar row"])
-            family.extend(["row", "bent-over row"])
-        elif has("bent", "over"):
-            if has("barbell"):
-                specific.extend(["barbell bent-over row", "bent-over row"])
-            elif has("dumbbell"):
-                specific.extend(["dumbbell bent-over row", "dumbbell row", "bent-over row"])
-            else:
-                specific.extend(["bent-over row"])
-            family.extend(["row"])
-        else:
-            family.extend(["row"])
-
-    if has("pullover"):
-        specific.extend(["machine pullover", "lever pullover", "pullover"])
-        family.extend(["pullover", "lat exercise"])
-        pattern.extend(["shoulder extension"])
-
-    if has("military", "press") or has("shoulder", "press") or has("overhead", "press"):
-        if has("military"):
-            specific.extend(["military press", "barbell military press", "overhead press"])
-        elif has("dumbbell"):
-            specific.extend(["dumbbell shoulder press", "dumbbell overhead press"])
-        family.extend(["shoulder press", "overhead press"])
-        pattern.extend(["vertical press"])
-
-    if has("lateral", "raise"):
-        if has("rear"):
-            specific.extend(["dumbbell rear lateral raise", "rear lateral raise", "rear delt raise"])
-            family.extend(["reverse fly", "rear delt raise"])
-            pattern.extend(["shoulder horizontal abduction"])
-        elif has("cable"):
-            specific.extend(["cable lateral raise", "one arm cable lateral raise"])
-            family.extend(["lateral raise"])
-            pattern.extend(["shoulder abduction"])
-        else:
-            specific.extend(["dumbbell lateral raise", "lateral raise"])
-            family.extend(["lateral raise"])
-            pattern.extend(["shoulder abduction"])
-
-    if has("shrug"):
-        specific.extend(["barbell shrug", "shoulder shrug"])
-        family.extend(["shrug"])
-        pattern.extend(["scapular elevation"])
-
-    if has("curl"):
-        pattern.extend(["elbow flexion"])
-        if has("hammer"):
-            specific.extend(["hammer curl", "dumbbell hammer curl"])
-            family.extend(["biceps curl", "elbow flexion exercise"])
-        elif has("preacher"):
-            specific.extend(["preacher curl", "machine preacher curl", "lever preacher curl"])
-            family.extend(["biceps curl", "elbow flexion exercise"])
-        elif has("dumbbell"):
-            specific.extend(["dumbbell curl"])
-            family.extend(["biceps curl", "elbow flexion exercise"])
-        else:
-            specific.extend(["barbell curl"])
-            family.extend(["biceps curl", "elbow flexion exercise"])
-
-    if has("pushdown") or has("triceps", "extension"):
-        if has("pushdown"):
-            specific.extend(["triceps pushdown", "cable pushdown"])
-        if has("rope"):
-            specific.extend(["rope triceps extension", "cable rope triceps extension"])
-        specific.extend(["cable triceps extension"])
-        family.extend(["triceps extension", "elbow extension exercise"])
-        pattern.extend(["elbow extension"])
-
-    if has("plank"):
-        if has("side"):
-            specific.extend(["side plank"])
-            family.extend(["plank", "side bridge"])
-            pattern.extend(["anti-lateral flexion", "core stabilization"])
-        else:
-            specific.extend(["front plank", "prone plank"])
-            family.extend(["plank"])
-            pattern.extend(["anti-extension", "core stabilization"])
-
-    if has("crunch"):
-        specific.extend(["weighted crunch", "crunch"])
-        family.extend(["abdominal crunch"])
-        pattern.extend(["trunk flexion"])
-
-    if has("hanging", "leg", "raise"):
-        specific.extend(["hanging leg raise", "hanging knee raise"])
-        family.extend(["leg raise"])
-        pattern.extend(["hip flexion", "trunk flexion"])
-
-    return {
-        "specific_variation": unique_strings(specific),
-        "exercise_family": unique_strings(family),
-        "movement_pattern": unique_strings(pattern),
-    }
-
 
 def build_search_term_tiers(entry: ExerciseEntry) -> list[dict[str, Any]]:
-    generated = generated_profile_terms(entry)
-    specific_terms = unique_strings([*english_search_terms(entry), *generated["specific_variation"]])
-    if not specific_terms:
-        specific_terms = [entry.exercise_name]
-
+    decomposition = build_movement_decomposition(entry).to_dict()
+    query_aliases = decomposition.get("query_aliases") or {}
     tiers = []
     seen: set[str] = set()
     for scope in ["specific_variation", "exercise_family", "movement_pattern"]:
-        raw_terms = specific_terms if scope == "specific_variation" else generated[scope]
+        raw_terms = query_aliases.get(scope) or []
+        if scope == "specific_variation":
+            raw_terms = unique_strings([entry.raw_name, entry.exercise_name, *entry.aliases, *english_search_terms(entry), *raw_terms])
         terms = []
         for term in raw_terms:
             key = normalize_title(term)
@@ -634,6 +418,11 @@ def build_search_term_tiers(entry: ExerciseEntry) -> list[dict[str, Any]]:
                     "priority": QUERY_SCOPE_PRIORITIES[scope],
                     "match_class": QUERY_SCOPE_MATCH_CLASS[scope],
                     "terms": terms,
+                    "movement_component_ids": [
+                        item.get("component_id")
+                        for item in decomposition.get("components", [])
+                        if isinstance(item, dict)
+                    ],
                 }
             )
     return tiers
@@ -670,6 +459,7 @@ def build_pubmed_query_specs(entry: ExerciseEntry) -> list[dict[str, Any]]:
                 "priority": tier["priority"],
                 "match_class": tier["match_class"],
                 "term_set": tier["terms"],
+                "movement_component_ids": tier.get("movement_component_ids") or [],
                 "query": build_pubmed_query_text(tier["terms"]),
                 "rationale": query_scope_rationale(scope),
             }
@@ -705,6 +495,11 @@ def query_matches_metadata(matches: list[dict[str, Any]]) -> dict[str, Any]:
                 "priority": priority,
                 **({"match_class": match.get("match_class")} if match.get("match_class") else {}),
                 **({"term_set": match.get("term_set")} if match.get("term_set") else {}),
+                **(
+                    {"movement_component_ids": match.get("movement_component_ids")}
+                    if match.get("movement_component_ids")
+                    else {}
+                ),
                 **({"query": query} if query else {}),
                 **({"match_source": match.get("match_source")} if match.get("match_source") else {}),
                 **({"term_matches": match.get("term_matches")} if match.get("term_matches") else {}),
@@ -891,7 +686,7 @@ def classify_exercise_match(source: dict[str, Any], entry: ExerciseEntry) -> str
 
 
 def normalize_title(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return re.sub(r"[^a-zа-яё0-9]+", " ", value.lower()).strip()
 
 
 def contains_normalized_phrase(haystack: str, phrase: str) -> bool:
@@ -915,6 +710,9 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
                     "query_id": spec["query_id"],
                     "query_scope": spec["query_scope"],
                     "priority": spec["priority"],
+                    "match_class": spec.get("match_class"),
+                    "term_set": spec.get("term_set"),
+                    "movement_component_ids": spec.get("movement_component_ids") or [],
                     "query": query,
                 }
             )
@@ -1535,6 +1333,10 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
     logs_dir = resolve_project_path(args.logs_dir)
     log_dir = logs_dir / entry.exercise_id
     log_dir.mkdir(parents=True, exist_ok=True)
+    decomposition = build_movement_decomposition(entry)
+    decomposition_path = logs_dir / f"{entry.exercise_id}.movement_decomposition.json"
+    save_decomposition(decomposition_path, decomposition)
+    decomposition_info = decomposition_summary(decomposition)
 
     sources: list[dict[str, Any]] = []
     backend_logs = []
@@ -1580,7 +1382,12 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         "exercise_name": entry.exercise_name,
         "russian_name": entry.russian_name,
         "aliases": entry.aliases,
+        "notes": entry.notes,
         "generated_at": now_iso(),
+        "movement_decomposition": {
+            "path": str(decomposition_path),
+            "summary": decomposition_info,
+        },
         "search_backends": backend_logs,
         "sources": merged_sources,
     }
@@ -1589,6 +1396,8 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         "generated_at": now_iso(),
         "card_path": str(cards_dir / f"{entry.exercise_id}.json"),
         "sources_path": str(sources_dir / f"{entry.exercise_id}.sources.json"),
+        "movement_decomposition_path": str(decomposition_path),
+        "movement_decomposition_summary": decomposition_info,
         "source_count": len(merged_sources),
         "validation": "skipped" if args.no_validate else "passed",
         "backend_logs": backend_logs,
@@ -1663,3 +1472,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

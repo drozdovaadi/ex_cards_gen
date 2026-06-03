@@ -132,6 +132,7 @@ def build_amass_queries(
                     "priority": priority,
                     "match_class": tier["match_class"],
                     "term_set": terms,
+                    "movement_component_ids": tier.get("movement_component_ids") or [],
                     "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
                     "parameters": params,
                     "rationale": query_rationale(query_kind, query_scope),

@@ -140,6 +140,7 @@ def build_open_literature_query_specs(entry: ExerciseEntry) -> list[dict[str, An
                     "priority": tier["priority"],
                     "match_class": tier["match_class"],
                     "term_set": tier["terms"],
+                    "movement_component_ids": tier.get("movement_component_ids") or [],
                     "query_kind": query_kind,
                     "evidence_terms": evidence_terms,
                     "queries": {
@@ -234,6 +235,7 @@ def query_match(spec: dict[str, Any], backend: str) -> dict[str, Any]:
         "priority": spec["priority"],
         "match_class": spec["match_class"],
         "term_set": spec["term_set"],
+        "movement_component_ids": spec.get("movement_component_ids") or [],
         "query": spec["queries"][backend],
         "match_source": backend,
     }

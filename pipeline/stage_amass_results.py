@@ -118,6 +118,7 @@ def query_match_from_spec(spec: dict[str, Any], match_source: str) -> dict[str, 
         "priority": coerce_priority(spec.get("priority")),
         "match_class": spec.get("match_class"),
         "term_set": spec.get("term_set") or [],
+        "movement_component_ids": spec.get("movement_component_ids") or [],
         "query": spec.get("query"),
         "match_source": match_source,
     }
@@ -151,6 +152,11 @@ def normalize_query_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any
                 "priority": priority,
                 **({"match_class": match.get("match_class")} if match.get("match_class") else {}),
                 **({"term_set": match.get("term_set")} if match.get("term_set") else {}),
+                **(
+                    {"movement_component_ids": match.get("movement_component_ids")}
+                    if match.get("movement_component_ids")
+                    else {}
+                ),
                 **({"query": query} if query else {}),
                 **({"match_source": match.get("match_source")} if match.get("match_source") else {}),
                 **({"term_matches": match.get("term_matches")} if match.get("term_matches") else {}),
