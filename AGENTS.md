@@ -22,8 +22,10 @@ The expected output is one structured exercise card per exercise, plus source/au
 ## Evidence Rules
 
 - Use scientific sources before web sources.
-- Search each exercise with a tiered strategy:
-  - `specific_variation`, priority 1: exact exercise variation and technique terms.
+- For each exercise, create an LLM-authored `research_plan` before source search.
+- Do not generate search strings from fixed local query templates. The LLM must analyze the exercise, identify the mechanical questions that need evidence, and write the backend search strings for that specific exercise.
+- Use tier labels only as evidence-provenance and ranking metadata:
+  - `specific_variation`, priority 1: exact exercise variation and technique questions.
   - `exercise_family`, priority 2: same exercise family, used as supplemental evidence.
   - `movement_pattern`, priority 3: broad movement pattern, used only as indirect support.
 - Do not let `exercise_family` or `movement_pattern` results outrank direct `specific_variation` evidence.
@@ -49,11 +51,12 @@ Process exercises one at a time.
 For each exercise:
 
 1. Normalize the exercise name and known aliases.
-2. Run `pipeline/open_literature.py` to collect Europe PMC + OpenAlex results unless a complete Amass batch is available.
-3. Optionally build a tiered Amass query plan with `pipeline/amass_queries.py`.
-4. Optionally run Amass MCP searches and save each exact raw response with `pipeline/amass_raw.py save` under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
-5. Optionally audit and stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
-6. Run tiered NCBI/PubMed source staging with `pipeline/generate_cards.py`, passing `--literature-json` and optional `--amass-json`.
+2. Write an LLM-authored research plan under `output/logs/<run_id>.research_plan.json`; include exercise-specific research questions, rationale, backend query strings, `query_scope`, `priority`, `match_class`, and intended card fields for every query.
+3. Run `pipeline/open_literature.py --research-plan <research_plan.json>` to collect Europe PMC + OpenAlex results unless a complete Amass batch is available.
+4. Optionally build an Amass execution plan from the same LLM-authored plan with `pipeline/amass_queries.py --research-plan <research_plan.json>`.
+5. Optionally run Amass MCP searches and save each exact raw response with `pipeline/amass_raw.py save` under `output/logs/amass_raw/<exercise_id>/<query_id>.json`.
+6. Optionally audit and stage Amass raw results with `pipeline/stage_amass_results.py` so every record has `query_matches`.
+7. Run NCBI/PubMed source staging with `pipeline/generate_cards.py --research-plan <research_plan.json>`, passing `--literature-json` and optional `--amass-json`.
 8. Normalize source records to the project source format.
 9. Merge and deduplicate open_literature, optional Amass, and NCBI sources by PMID, DOI, PMCID, and normalized title.
 10. Rank evidence by directness, study type, relevance, source quality, and full-text availability.

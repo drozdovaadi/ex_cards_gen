@@ -105,7 +105,10 @@ def query_specs_for_exercise(exercise: dict[str, Any]) -> list[dict[str, Any]]:
                 "priority": query.get("priority"),
                 "match_class": query.get("match_class"),
                 "term_set": query.get("term_set") or [],
+                "research_question_ids": query.get("research_question_ids") or [],
+                "intended_card_fields": query.get("intended_card_fields") or [],
                 "query": params.get("query"),
+                "rationale": query.get("rationale") or "",
             }
         )
     return specs
@@ -119,8 +122,11 @@ def query_match_from_spec(spec: dict[str, Any], match_source: str) -> dict[str, 
         "match_class": spec.get("match_class"),
         "term_set": spec.get("term_set") or [],
         "movement_component_ids": spec.get("movement_component_ids") or [],
+        "research_question_ids": spec.get("research_question_ids") or [],
+        "intended_card_fields": spec.get("intended_card_fields") or [],
         "query": spec.get("query"),
         "match_source": match_source,
+        "rationale": spec.get("rationale") or "",
     }
 
 
@@ -157,9 +163,20 @@ def normalize_query_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any
                     if match.get("movement_component_ids")
                     else {}
                 ),
+                **(
+                    {"research_question_ids": match.get("research_question_ids")}
+                    if match.get("research_question_ids")
+                    else {}
+                ),
+                **(
+                    {"intended_card_fields": match.get("intended_card_fields")}
+                    if match.get("intended_card_fields")
+                    else {}
+                ),
                 **({"query": query} if query else {}),
                 **({"match_source": match.get("match_source")} if match.get("match_source") else {}),
                 **({"term_matches": match.get("term_matches")} if match.get("term_matches") else {}),
+                **({"rationale": match.get("rationale")} if match.get("rationale") else {}),
             }
         )
     return sorted(normalized, key=lambda item: coerce_priority(item.get("priority")))
@@ -314,7 +331,8 @@ def build_empty_output(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
             "exercise_name": exercise["exercise_name"],
             "russian_name": exercise["russian_name"],
             "aliases": exercise.get("aliases") or [],
-            "query_strategy": "tiered_specific_then_family_then_pattern",
+            "query_strategy": plan.get("query_strategy") or "llm_dynamic_research_plan",
+            "research_plan": exercise.get("research_plan") or {},
             "query_specs": query_specs,
             "queries_used": [spec["query"] for spec in query_specs if spec.get("query")],
             "results": [],

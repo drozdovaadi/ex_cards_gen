@@ -139,6 +139,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--logs-dir", type=Path, default=Path("output") / "logs")
     parser.add_argument("--amass-json", type=Path, action="append", help="Optional staged Amass result JSON.")
     parser.add_argument("--literature-json", type=Path, action="append", help="Optional pre-collected open-literature JSON.")
+    parser.add_argument(
+        "--research-plan",
+        type=Path,
+        help="LLM-authored research plan JSON. Search queries are not generated from local templates.",
+    )
     parser.add_argument("--skip-open-literature", action="store_true", help="Use only provided secondary branch JSON.")
     parser.add_argument("--no-validate", action="store_true", help="Skip schema validation in generation/fill stages.")
     parser.add_argument("--dry-run", action="store_true", help="Parse input and show decomposition summaries without network calls.")
@@ -163,6 +168,9 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
 
+    if not args.research_plan:
+        parser.error("--research-plan is required for generation runs.")
+
     logs_dir = resolve_project_path(args.logs_dir)
     literature_jsons = list(args.literature_json or [])
     command_logs: list[dict[str, Any]] = []
@@ -179,6 +187,8 @@ def main(argv: list[str] | None = None) -> int:
                     str(args.retmax),
                     "--output",
                     str(open_literature_output),
+                    "--research-plan",
+                    str(args.research_plan),
                 ]
             )
         )
@@ -199,6 +209,8 @@ def main(argv: list[str] | None = None) -> int:
         str(args.logs_dir),
         "--report-path",
         str(generate_report_path),
+        "--research-plan",
+        str(args.research_plan),
     ]
     for path in args.amass_json or []:
         generate_command.extend(["--amass-json", str(path)])
@@ -228,6 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         "input_file": str(input_path),
         "exercise_count": len(exercises),
         "exercise_ids": [entry.exercise_id for entry in exercises],
+        "research_plan": str(args.research_plan),
         "open_literature_json": [str(path) for path in literature_jsons],
         "generate_report_path": str(generate_report_path),
         "populated_cards": populate_logs,

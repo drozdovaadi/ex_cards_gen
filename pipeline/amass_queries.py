@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Build a standardized Amass MCP query plan from an exercise input file.
+Build an Amass MCP execution plan from an LLM-authored research plan.
 
 This script does not call Amass directly. Amass is an MCP backend available to
 the Codex agent. The output of this script is the contract the agent follows:
@@ -24,39 +24,17 @@ from typing import Any
 from generate_cards import (
     ExerciseEntry,
     PROJECT_ROOT,
-    build_search_term_tiers,
     load_exercises,
     looks_english,
     now_iso,
     write_json,
 )
-
-
-DEFAULT_EVIDENCE_TERMS = [
-    "biomechanics",
-    "electromyography",
-    "EMG",
-    "kinematics",
-    "kinetics",
-    "muscle activation",
-    "joint moment",
-    "resistance training",
-]
-
-REVIEW_TERMS = [
-    "review",
-    "systematic review",
-    "meta-analysis",
-]
-
-TECHNIQUE_TERMS = [
-    "technique",
-    "stance",
-    "grip",
-    "range of motion",
-    "load",
-    "fatigue",
-]
+from research_plan import (
+    ResearchPlanError,
+    load_research_plan,
+    query_specs_for_backend,
+    research_plan_summary,
+)
 
 
 def unique_strings(values: list[str]) -> list[str]:
@@ -72,92 +50,47 @@ def unique_strings(values: list[str]) -> list[str]:
 
 
 def search_terms_for_entry(entry: ExerciseEntry) -> list[str]:
-    return unique_strings(
-        [term for tier in build_search_term_tiers(entry) for term in tier["terms"]]
-    )
-
-
-def quoted(term: str) -> str:
-    escaped = term.replace('"', '\\"')
-    return f'"{escaped}"'
-
-
-def build_query_text(exercise_terms: list[str], evidence_terms: list[str]) -> str:
-    exercise_part = " OR ".join(quoted(term) for term in exercise_terms)
-    evidence_part = " ".join(evidence_terms)
-    if len(exercise_terms) > 1:
-        return f"({exercise_part}) {evidence_part}"
-    return f"{exercise_part} {evidence_part}"
-
-
-AMASS_QUERY_SPECS = [
-    ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
-    ("review_synthesis", REVIEW_TERMS + ["biomechanics", "muscle activation", "resistance training"]),
-    ("technique_and_load", TECHNIQUE_TERMS + ["biomechanics", "kinematics", "kinetics"]),
-]
-
-
-def amass_query_specs_for_scope(scope: str) -> list[tuple[str, list[str]]]:
-    if scope == "movement_pattern":
-        return [
-            ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
-            ("review_synthesis", REVIEW_TERMS + ["biomechanics", "resistance training"]),
-        ]
-    return AMASS_QUERY_SPECS
+    return unique_strings([entry.exercise_name, *entry.aliases, entry.raw_name])
 
 
 def build_amass_queries(
     entry: ExerciseEntry,
+    research_plan: dict[str, Any],
     min_journal_quality_jufo: int,
     min_publication_date: str | None,
 ) -> list[dict[str, Any]]:
     queries = []
-    for tier in build_search_term_tiers(entry):
-        query_scope = tier["query_scope"]
-        priority = tier["priority"]
-        terms = tier["terms"]
-        for query_kind, evidence_terms in amass_query_specs_for_scope(query_scope):
-            query_id = f"{query_scope}_{query_kind}"
-            params: dict[str, Any] = {
-                "query": build_query_text(terms, evidence_terms),
-                "isRetracted": False,
-                "minJournalQualityJufo": min_journal_quality_jufo,
+    for spec in query_specs_for_backend(research_plan, entry, "amass"):
+        params: dict[str, Any] = {
+            "query": spec["query"],
+            "isRetracted": False,
+            "minJournalQualityJufo": min_journal_quality_jufo,
+        }
+        if min_publication_date:
+            params["minPublicationDate"] = min_publication_date
+        queries.append(
+            {
+                "query_id": spec["query_id"],
+                "query_scope": spec["query_scope"],
+                "priority": spec["priority"],
+                "match_class": spec["match_class"],
+                "term_set": spec.get("term_set") or [],
+                "movement_component_ids": spec.get("movement_component_ids") or [],
+                "research_question_ids": spec.get("research_question_ids") or [],
+                "intended_card_fields": spec.get("intended_card_fields") or [],
+                "query_kind": spec.get("query_kind") or "llm_dynamic",
+                "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
+                "parameters": params,
+                "rationale": spec.get("rationale") or "",
             }
-            if min_publication_date:
-                params["minPublicationDate"] = min_publication_date
-            queries.append(
-                {
-                    "query_id": query_id,
-                    "query_scope": query_scope,
-                    "priority": priority,
-                    "match_class": tier["match_class"],
-                    "term_set": terms,
-                    "movement_component_ids": tier.get("movement_component_ids") or [],
-                    "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
-                    "parameters": params,
-                    "rationale": query_rationale(query_kind, query_scope),
-                }
-            )
+        )
     return queries
-
-
-def query_rationale(query_kind: str, query_scope: str) -> str:
-    scope_rationales = {
-        "specific_variation": "Priority 1 exact-variation search.",
-        "exercise_family": "Priority 2 family search used when exact-variation evidence is limited.",
-        "movement_pattern": "Priority 3 movement-pattern search used only as indirect support.",
-    }
-    rationales = {
-        "biomechanics_core": "Find biomechanics, EMG, kinematic, kinetic, and muscle activation evidence.",
-        "review_synthesis": "Find reviews or synthesis papers to anchor broad claims and limitations.",
-        "technique_and_load": "Find sources about technique variables, range of motion, load, fatigue, and movement mechanics.",
-    }
-    return f"{scope_rationales[query_scope]} {rationales[query_kind]}"
 
 
 def build_plan(
     input_file: Path,
     exercises: list[ExerciseEntry],
+    research_plan: dict[str, Any],
     min_journal_quality_jufo: int,
     min_publication_date: str | None,
 ) -> dict[str, Any]:
@@ -167,7 +100,7 @@ def build_plan(
         "backend": "amass_biomedcore",
         "tool": "mcp__codex_apps__amass._search_amass_biomedcore_records",
         "instructions": [
-            "Run every query in exercises[].queries through Amass BioMedCore in ascending priority order.",
+            "Run every LLM-authored query in exercises[].queries through Amass BioMedCore in ascending priority order.",
             "Treat priority 1 specific_variation records as the strongest match; priority 2 and 3 records are supplemental.",
             "Use pipeline/amass_raw.py next to print missing MCP calls and canonical raw paths.",
             "Save each raw MCP response with pipeline/amass_raw.py save.",
@@ -176,6 +109,7 @@ def build_plan(
             "The staging step attaches query_id, query_scope, priority, and query as query_matches metadata.",
             "Do not remove PMID, DOI, amassId, abstract, hasFulltext, isRetracted, citationCount, or journalQualityJufo fields.",
         ],
+        "query_strategy": "llm_dynamic_research_plan",
         "result_file": str(PROJECT_ROOT / "output" / "logs" / "amass_results.json"),
         "exercise_count": len(exercises),
         "exercises": [
@@ -184,10 +118,10 @@ def build_plan(
                 "exercise_name": entry.exercise_name,
                 "russian_name": entry.russian_name,
                 "aliases": entry.aliases,
-                "search_tiers": build_search_term_tiers(entry),
+                "research_plan": research_plan_summary(research_plan, entry),
                 "search_terms": search_terms_for_entry(entry),
                 "warnings": entry_warnings(entry),
-                "queries": build_amass_queries(entry, min_journal_quality_jufo, min_publication_date),
+                "queries": build_amass_queries(entry, research_plan, min_journal_quality_jufo, min_publication_date),
             }
             for entry in exercises
         ],
@@ -208,7 +142,8 @@ def build_results_scaffold(plan: dict[str, Any]) -> dict[str, Any]:
             "exercise_name": item["exercise_name"],
             "russian_name": item["russian_name"],
             "aliases": item["aliases"],
-            "query_strategy": "tiered_specific_then_family_then_pattern",
+            "query_strategy": "llm_dynamic_research_plan",
+            "research_plan": item.get("research_plan") or {},
             "query_specs": [
                 {
                     "query_id": query["query_id"],
@@ -216,7 +151,10 @@ def build_results_scaffold(plan: dict[str, Any]) -> dict[str, Any]:
                     "priority": query["priority"],
                     "match_class": query["match_class"],
                     "term_set": query["term_set"],
+                    "research_question_ids": query.get("research_question_ids") or [],
+                    "intended_card_fields": query.get("intended_card_fields") or [],
                     "query": query["parameters"]["query"],
+                    "rationale": query.get("rationale") or "",
                 }
                 for query in item["queries"]
             ],
@@ -230,6 +168,12 @@ def build_results_scaffold(plan: dict[str, Any]) -> dict[str, Any]:
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build Amass MCP query plan for an exercise list.")
     parser.add_argument("input_file", type=Path, help="Path to .txt, .md, or .csv input file.")
+    parser.add_argument(
+        "--research-plan",
+        type=Path,
+        required=True,
+        help="LLM-authored research plan JSON. Search queries are not generated from local templates.",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -269,11 +213,18 @@ def main(argv: list[str] | None = None) -> int:
     if not exercises:
         raise SystemExit(f"No exercises found in input file: {input_file}")
 
+    research_plan_path = args.research_plan if args.research_plan.is_absolute() else PROJECT_ROOT / args.research_plan
+    try:
+        research_plan = load_research_plan(research_plan_path)
+    except ResearchPlanError as exc:
+        raise SystemExit(str(exc)) from exc
+
     output_path = args.output if args.output.is_absolute() else PROJECT_ROOT / args.output
     scaffold_path = args.scaffold if args.scaffold.is_absolute() else PROJECT_ROOT / args.scaffold
     plan = build_plan(
         input_file=input_file,
         exercises=exercises,
+        research_plan=research_plan,
         min_journal_quality_jufo=args.min_journal_quality_jufo,
         min_publication_date=args.min_publication_date,
     )

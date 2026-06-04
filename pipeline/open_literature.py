@@ -26,16 +26,19 @@ from typing import Any
 from generate_cards import (
     ExerciseEntry,
     PROJECT_ROOT,
-    build_search_term_tiers,
     guess_evidence_domains,
     guess_study_type,
     load_exercises,
-    normalize_space,
     normalize_title,
     now_iso,
     parse_year,
-    query_scope_rationale,
     write_json,
+)
+from research_plan import (
+    ResearchPlanError,
+    load_research_plan,
+    query_specs_for_backend,
+    research_plan_summary,
 )
 
 
@@ -45,111 +48,39 @@ OPENALEX_BACKEND = "openalex"
 EUROPE_PMC_PROVIDER_BACKEND = "open_literature_europe_pmc"
 OPENALEX_PROVIDER_BACKEND = "open_literature_openalex"
 
-DEFAULT_EVIDENCE_TERMS = [
-    "biomechanics",
-    "electromyography",
-    "EMG",
-    "kinematics",
-    "kinetics",
-    "muscle activation",
-    "joint moment",
-    "resistance training",
-]
-
-REVIEW_TERMS = [
-    "review",
-    "systematic review",
-    "meta-analysis",
-    "biomechanics",
-    "muscle activation",
-    "resistance training",
-]
-
-TECHNIQUE_TERMS = [
-    "technique",
-    "stance",
-    "grip",
-    "range of motion",
-    "load",
-    "fatigue",
-    "biomechanics",
-    "kinematics",
-    "kinetics",
-]
-
-QUERY_KIND_TERMS = [
-    ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
-    ("review_synthesis", REVIEW_TERMS),
-    ("technique_and_load", TECHNIQUE_TERMS),
-]
-
-MOVEMENT_PATTERN_QUERY_KIND_TERMS = [
-    ("biomechanics_core", DEFAULT_EVIDENCE_TERMS),
-    ("review_synthesis", REVIEW_TERMS),
-]
-
-
 class OpenLiteratureError(RuntimeError):
     pass
 
 
-def quoted(value: str) -> str:
-    return '"' + value.replace('"', '\\"') + '"'
+def merge_backend_query_specs(specs: list[dict[str, Any]], backend: str, by_id: dict[str, dict[str, Any]]) -> None:
+    for spec in specs:
+        query_id = spec["query_id"]
+        existing = by_id.setdefault(
+            query_id,
+            {
+                "query_id": query_id,
+                "query_scope": spec["query_scope"],
+                "priority": spec["priority"],
+                "match_class": spec["match_class"],
+                "term_set": spec.get("term_set") or [],
+                "movement_component_ids": spec.get("movement_component_ids") or [],
+                "research_question_ids": spec.get("research_question_ids") or [],
+                "intended_card_fields": spec.get("intended_card_fields") or [],
+                "query_kind": spec.get("query_kind") or "llm_dynamic",
+                "queries": {},
+                "rationale": spec.get("rationale") or "",
+            },
+        )
+        existing["queries"][backend] = spec["query"]
 
 
-def unique_strings(values: list[str]) -> list[str]:
-    result = []
-    seen = set()
-    for value in values:
-        normalized = normalize_space(str(value))
-        key = normalized.lower()
-        if normalized and key not in seen:
-            seen.add(key)
-            result.append(normalized)
-    return result
-
-
-def build_europe_pmc_query(exercise_terms: list[str], evidence_terms: list[str]) -> str:
-    exercise_part = " OR ".join(quoted(term) for term in exercise_terms)
-    evidence_part = " OR ".join(quoted(term) for term in evidence_terms)
-    if len(exercise_terms) > 1:
-        exercise_part = f"({exercise_part})"
-    return f"{exercise_part} AND ({evidence_part})"
-
-
-def build_openalex_query(exercise_terms: list[str], evidence_terms: list[str]) -> str:
-    return " ".join(unique_strings([*exercise_terms[:4], *evidence_terms[:5]]))
-
-
-def query_kinds_for_scope(scope: str) -> list[tuple[str, list[str]]]:
-    if scope == "movement_pattern":
-        return MOVEMENT_PATTERN_QUERY_KIND_TERMS
-    return QUERY_KIND_TERMS
-
-
-def build_open_literature_query_specs(entry: ExerciseEntry) -> list[dict[str, Any]]:
-    specs = []
-    for tier in build_search_term_tiers(entry):
-        scope = tier["query_scope"]
-        for query_kind, evidence_terms in query_kinds_for_scope(scope):
-            query_id = f"{scope}_{query_kind}"
-            specs.append(
-                {
-                    "query_id": query_id,
-                    "query_scope": scope,
-                    "priority": tier["priority"],
-                    "match_class": tier["match_class"],
-                    "term_set": tier["terms"],
-                    "movement_component_ids": tier.get("movement_component_ids") or [],
-                    "query_kind": query_kind,
-                    "evidence_terms": evidence_terms,
-                    "queries": {
-                        EUROPE_PMC_BACKEND: build_europe_pmc_query(tier["terms"], evidence_terms),
-                        OPENALEX_BACKEND: build_openalex_query(tier["terms"], evidence_terms),
-                    },
-                    "rationale": query_scope_rationale(scope),
-                }
-            )
+def build_open_literature_query_specs(entry: ExerciseEntry, research_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    by_id: dict[str, dict[str, Any]] = {}
+    merge_backend_query_specs(query_specs_for_backend(research_plan, entry, "europe_pmc"), EUROPE_PMC_BACKEND, by_id)
+    merge_backend_query_specs(query_specs_for_backend(research_plan, entry, "openalex"), OPENALEX_BACKEND, by_id)
+    specs = sorted(by_id.values(), key=lambda item: (item.get("priority", 99), item.get("query_id") or ""))
+    if not specs:
+        raise OpenLiteratureError(f"Research plan has no Europe PMC or OpenAlex queries for {entry.exercise_id}.")
     return specs
 
 
@@ -236,8 +167,11 @@ def query_match(spec: dict[str, Any], backend: str) -> dict[str, Any]:
         "match_class": spec["match_class"],
         "term_set": spec["term_set"],
         "movement_component_ids": spec.get("movement_component_ids") or [],
+        "research_question_ids": spec.get("research_question_ids") or [],
+        "intended_card_fields": spec.get("intended_card_fields") or [],
         "query": spec["queries"][backend],
         "match_source": backend,
+        "rationale": spec.get("rationale") or "",
     }
 
 
@@ -482,7 +416,9 @@ def write_raw(raw_dir: Path, entry: ExerciseEntry, spec: dict[str, Any], backend
 
 
 def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str, Any]:
-    query_specs = build_open_literature_query_specs(entry)
+    research_plan = args.research_plan_data
+    query_specs = build_open_literature_query_specs(entry, research_plan)
+    research_info = research_plan_summary(research_plan, entry)
     raw_dir = args.raw_dir if args.raw_dir.is_absolute() else PROJECT_ROOT / args.raw_dir
     results: list[dict[str, Any]] = []
     backend_logs: list[dict[str, Any]] = []
@@ -493,6 +429,8 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
             (EUROPE_PMC_BACKEND, search_europe_pmc, normalize_europe_pmc_records),
             (OPENALEX_BACKEND, search_openalex, normalize_openalex_records),
         ]:
+            if backend not in spec.get("queries", {}):
+                continue
             try:
                 raw, url = search_fn(spec, args.retmax, args.timeout_sec, args.retries, args.pause_sec)
                 raw_files.append(write_raw(raw_dir, entry, spec, backend, url, raw))
@@ -533,12 +471,14 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         "exercise_name": entry.exercise_name,
         "russian_name": entry.russian_name,
         "aliases": entry.aliases,
-        "query_strategy": "tiered_specific_then_family_then_pattern",
+        "query_strategy": "llm_dynamic_research_plan",
+        "research_plan": research_info,
         "query_specs": query_specs,
         "queries_used": [
             {"backend": backend, "query": spec["queries"][backend]}
             for spec in query_specs
             for backend in [EUROPE_PMC_BACKEND, OPENALEX_BACKEND]
+            if backend in spec["queries"]
         ],
         "backend_logs": backend_logs,
         "raw_files": raw_files,
@@ -553,7 +493,7 @@ def build_results_document(input_file: Path, exercises: list[ExerciseEntry], arg
         "provider": OPEN_LITERATURE_PROVIDER,
         "provider_backends": [EUROPE_PMC_PROVIDER_BACKEND, OPENALEX_PROVIDER_BACKEND],
         "backends": [EUROPE_PMC_BACKEND, OPENALEX_BACKEND],
-        "query_strategy": "tiered_specific_then_family_then_pattern",
+        "query_strategy": "llm_dynamic_research_plan",
         "exercise_count": len(exercises),
         "exercises": [],
     }
@@ -575,6 +515,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=Path,
         default=PROJECT_ROOT / "output" / "logs" / "open_literature_results.json",
         help="Where to write the normalized open-literature result JSON.",
+    )
+    parser.add_argument(
+        "--research-plan",
+        type=Path,
+        required=True,
+        help="LLM-authored research plan JSON. Search queries are not generated from local templates.",
     )
     parser.add_argument(
         "--raw-dir",
@@ -600,6 +546,12 @@ def main(argv: list[str] | None = None) -> int:
     exercises = load_exercises(input_file)
     if not exercises:
         raise SystemExit(f"No exercises found in input file: {input_file}")
+
+    research_plan_path = args.research_plan if args.research_plan.is_absolute() else PROJECT_ROOT / args.research_plan
+    try:
+        args.research_plan_data = load_research_plan(research_plan_path)
+    except ResearchPlanError as exc:
+        raise SystemExit(str(exc)) from exc
 
     output_path = args.output if args.output.is_absolute() else PROJECT_ROOT / args.output
     result = build_results_document(input_file, exercises, args)

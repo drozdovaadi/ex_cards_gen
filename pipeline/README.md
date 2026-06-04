@@ -20,13 +20,13 @@ The first implementation can start with `.txt` and `.md`, then add tabular forma
 Current CLI:
 
 ```powershell
-python pipeline\amass_queries.py input\exercises.txt
+python pipeline\amass_queries.py input\exercises.txt --research-plan output\logs\research_plan.json
 python pipeline\amass_raw.py next --limit 1
 python pipeline\amass_raw.py save --exercise-id <exercise_id> --query-id <query_id>
 python pipeline\amass_raw.py audit --require-complete
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
-python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json
-python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json
+python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json --research-plan output\logs\research_plan.json
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json --research-plan output\logs\research_plan.json
 python pipeline\populate_card.py --all
 ```
 
@@ -56,30 +56,20 @@ Create a canonical exercise identity:
 - exercise family
 - variation and variation parent
 
-### 2. Search Evidence
+### 2. Build Research Plan And Search Evidence
 
 Run independent mandatory search branches:
 
-- Tiered exercise query strategy:
-  - `specific_variation` first: exact technique and variation terms are authoritative when present.
-  - `exercise_family` second: same family evidence fills gaps and supports broader mechanics.
-  - `movement_pattern` third: similar pattern evidence is indirect and cannot override variation-specific findings.
+- Before any backend search, Codex/LLM must write `output/logs/<run_id>.research_plan.json`.
+- Search strings must be chosen by exercise-specific reasoning, not by fixed local query templates.
+- The plan must include research questions, rationale, backend query strings, `query_scope`, `priority`, `match_class`, and intended card fields.
+- `specific_variation`, `exercise_family`, and `movement_pattern` remain provenance/ranking labels only; they do not define fixed search strings.
 - open_literature:
   - Europe PMC
   - OpenAlex
-  - biomechanics
-  - electromyography / EMG
-  - kinematics
-  - kinetics
-  - muscle activation
-  - resistance training
+  - executes the Europe PMC and OpenAlex query strings from the research plan
 - Optional Amass BioMedCore:
-  - biomechanics
-  - electromyography / EMG
-  - kinematics
-  - kinetics
-  - muscle activation
-  - resistance training
+  - executes the Amass query strings from the research plan
 - Life Science Research / NCBI Entrez:
   - PubMed `esearch`
   - PubMed `esummary`
@@ -90,9 +80,50 @@ Run independent mandatory search branches:
 
 Consensus and Elicit are optional and should be used only when available.
 
+Minimal research plan shape:
+
+```json
+{
+  "strategy": "llm_dynamic_research_plan",
+  "exercises": [
+    {
+      "exercise_id": "barbell_bench_press",
+      "exercise_name": "Barbell Bench Press",
+      "research_questions": [
+        {
+          "question_id": "bar_path_and_touch_point",
+          "question": "How do bar path and touch point change shoulder and elbow demands?",
+          "why_it_matters": "This determines vector-shift and muscle-bias fields."
+        }
+      ],
+      "queries": [
+        {
+          "query_id": "specific_variation_bar_path",
+          "query_scope": "specific_variation",
+          "priority": 1,
+          "match_class": "direct",
+          "research_question_ids": ["bar_path_and_touch_point"],
+          "intended_card_fields": [
+            "biomechanics.external_load_mechanics.vector_shift_effects",
+            "biomechanics.technique_variables"
+          ],
+          "queries": {
+            "pubmed": "\"bench press\" \"bar path\" biomechanics",
+            "europe_pmc": "\"bench press\" AND \"bar path\" AND biomechanics",
+            "openalex": "bench press bar path biomechanics",
+            "amass": "\"bench press\" \"bar path\" biomechanics"
+          },
+          "rationale": "Bench press bar path is a variation-specific technique variable that changes shoulder and elbow moments."
+        }
+      ]
+    }
+  ]
+}
+```
+
 The current local CLI implements the Life Science Research / NCBI PubMed branch and accepts `--literature-json` from `pipeline/open_literature.py`. Amass itself is available to the Codex chat agent as an MCP backend, not as a local Python API, so saved Amass MCP result JSON is passed through optional `--amass-json`.
 
-open_literature, optional Amass, and NCBI use the same tiered search profile so their results can be merged and ranked consistently.
+open_literature, optional Amass, and NCBI use the same LLM-authored research plan so their results can be merged and ranked consistently.
 Raw Amass MCP responses must be saved per query under `output/logs/amass_raw/<exercise_id>/<query_id>.json`, then staged with `pipeline/stage_amass_results.py`. The staging step attaches `query_matches` to each source and deduplicates records before `generate_cards.py` runs.
 
 Useful Amass raw commands:
@@ -100,7 +131,7 @@ Useful Amass raw commands:
 ```powershell
 python pipeline\amass_raw.py manifest --exercise-id barbell_front_squat
 python pipeline\amass_raw.py next --exercise-id barbell_front_squat --limit 2
-python pipeline\amass_raw.py save --exercise-id barbell_front_squat --query-id specific_variation_biomechanics_core
+python pipeline\amass_raw.py save --exercise-id barbell_front_squat --query-id <query_id_from_research_plan>
 python pipeline\amass_raw.py audit --exercise-id barbell_front_squat
 ```
 

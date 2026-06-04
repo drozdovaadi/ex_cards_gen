@@ -17,20 +17,48 @@ The mandatory source contract is:
 
 The local Python pipeline does not call Amass directly. If Amass is used, the Codex agent is responsible for the Amass MCP calls and for saving every raw per-query response into `output/logs/amass_raw/<exercise_id>/<query_id>.json` with `pipeline/amass_raw.py save`.
 
-Both branches must use the same tiered search order:
+Before any backend search, Codex/LLM must create a per-exercise research plan:
 
-1. `specific_variation`, priority 1: exact exercise variation and technique.
-2. `exercise_family`, priority 2: broader exercise family.
-3. `movement_pattern`, priority 3: similar movement pattern, indirect support only.
+- The plan is written to `output/logs/<run_id>.research_plan.json`.
+- Search strings are selected by exercise-specific analysis, not by local query templates.
+- The plan contains research questions, rationale, backend query strings, `query_scope`, `priority`, `match_class`, and intended card fields.
+- `specific_variation`, `exercise_family`, and `movement_pattern` are provenance/ranking labels only.
 
 Family and movement-pattern results are supplemental; they should fill gaps or support general mechanics, not override direct evidence for the exact variation.
 
 ## Steps
 
-### 1. Run Open Literature Search
+### 1. Write LLM Research Plan
+
+Create `output/logs/<run_id>.research_plan.json` manually from LLM analysis of each exercise. Do not use fixed search-query templates.
+
+Minimum query item shape:
+
+```json
+{
+  "query_id": "specific_variation_bar_path",
+  "query_scope": "specific_variation",
+  "priority": 1,
+  "match_class": "direct",
+  "research_question_ids": ["bar_path_and_touch_point"],
+  "intended_card_fields": [
+    "biomechanics.external_load_mechanics.vector_shift_effects",
+    "biomechanics.technique_variables"
+  ],
+  "queries": {
+    "pubmed": "\"bench press\" \"bar path\" biomechanics",
+    "europe_pmc": "\"bench press\" AND \"bar path\" AND biomechanics",
+    "openalex": "bench press bar path biomechanics",
+    "amass": "\"bench press\" \"bar path\" biomechanics"
+  },
+  "rationale": "The query targets a concrete exercise-specific technique variable."
+}
+```
+
+### 2. Run Open Literature Search
 
 ```powershell
-python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json
+python pipeline\open_literature.py input\exercises.txt --retmax 10 --output output\logs\open_literature_results.json --research-plan output\logs\<run_id>.research_plan.json
 ```
 
 Outputs:
@@ -40,12 +68,12 @@ output/logs/open_literature_results.json
 output/logs/open_literature_raw/<exercise_id>/<query_id>.<backend>.json
 ```
 
-This branch uses Europe PMC and OpenAlex with the same `specific_variation` -> `exercise_family` -> `movement_pattern` priority order.
+This branch executes the Europe PMC and OpenAlex search strings from the LLM research plan.
 
-### 2. Optional: Build Amass Query Plan
+### 3. Optional: Build Amass Query Plan
 
 ```powershell
-python pipeline\amass_queries.py input\exercises.txt
+python pipeline\amass_queries.py input\exercises.txt --research-plan output\logs\<run_id>.research_plan.json
 ```
 
 Outputs:
@@ -55,7 +83,7 @@ output/logs/amass_query_plan.json
 output/logs/amass_results.scaffold.json
 ```
 
-### 3. Optional: Run Amass MCP Searches
+### 4. Optional: Run Amass MCP Searches
 
 Use the raw helper to get the next missing query:
 
@@ -98,7 +126,7 @@ Stage the raw responses into the final Amass result file:
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --raw-dir output\logs\amass_raw --output output\logs\amass_results.json
 ```
 
-The staging script deduplicates records per exercise by `pmid`, `doi`, `amassId`, `pmcid`, and normalized title. It also attaches `query_matches` to every result with `query_id`, `query_scope`, `priority`, and `query`.
+The staging script deduplicates records per exercise by `pmid`, `doi`, `amassId`, `pmcid`, and normalized title. It also attaches `query_matches` to every result with `query_id`, `query_scope`, `priority`, `query`, `research_question_ids`, `intended_card_fields`, and `rationale`.
 
 If only a legacy aggregate Amass file exists, restage it with:
 
@@ -106,7 +134,7 @@ If only a legacy aggregate Amass file exists, restage it with:
 python pipeline\stage_amass_results.py --plan output\logs\amass_query_plan.json --input output\logs\amass_results.json --output output\logs\amass_results.json
 ```
 
-Legacy records without query provenance are marked with inferred query matches when the title/abstract contains terms from the tiered query plan.
+Legacy records without query provenance are marked with inferred query matches only when their text matches terms explicitly present in the LLM research plan.
 
 Expected shape:
 
@@ -117,7 +145,7 @@ Expected shape:
     "exercise_name": "barbell squat",
     "russian_name": "barbell squat",
     "aliases": [],
-    "query_strategy": "tiered_specific_then_family_then_pattern",
+    "query_strategy": "llm_dynamic_research_plan",
     "query_specs": [],
     "queries_used": ["..."],
     "results": []
@@ -141,10 +169,10 @@ Each `results` item should preserve Amass fields such as:
 - `isRetracted`
 - `query_matches`
 
-### 4. Run Source Staging And NCBI Merge
+### 5. Run Source Staging And NCBI Merge
 
 ```powershell
-python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json
+python pipeline\generate_cards.py input\exercises.txt --retmax 10 --literature-json output\logs\open_literature_results.json --research-plan output\logs\<run_id>.research_plan.json
 ```
 
 When Amass is available, add:
@@ -164,7 +192,7 @@ output/logs/<exercise_id>.log.json
 `output/exercise_cards/` is the default card destination. Use a different
 card output directory only when the user explicitly requests it.
 
-### 5. Prepare Evidence-First Biomechanics
+### 6. Prepare Evidence-First Biomechanics
 
 ```powershell
 python pipeline\populate_card.py --all
@@ -189,12 +217,12 @@ This updates cards in:
 output/exercise_cards/
 ```
 
-### 6. Verify
+### 7. Verify
 
 At minimum:
 
 ```powershell
-python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/open_literature.py','pipeline/amass_raw.py','pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py']]; print('OK')"
+python -c "import ast, pathlib; [ast.parse(pathlib.Path(p).read_text(encoding='utf-8')) for p in ['pipeline/research_plan.py','pipeline/open_literature.py','pipeline/amass_raw.py','pipeline/amass_queries.py','pipeline/stage_amass_results.py','pipeline/generate_cards.py','pipeline/populate_card.py','pipeline/run_generation.py']]; print('OK')"
 ```
 
 For a real run, also inspect:
@@ -207,10 +235,11 @@ output/exercise_cards/<exercise_id>.json
 
 ## Failure Rules
 
+- Do not run `open_literature.py`, `amass_queries.py`, `generate_cards.py`, or `run_generation.py` without an LLM-authored `--research-plan`.
 - Do not run `generate_cards.py` without at least one secondary branch: `output/logs/open_literature_results.json` or `output/logs/amass_results.json`.
 - Do not treat NCBI-only output as complete.
 - Do not stage final Amass results from chat memory; save raw MCP responses through `pipeline/amass_raw.py save`.
-- If open_literature and Amass both return no results for an exercise, record the gap and rerun with broader aliases before generating a final card.
+- If open_literature and Amass both return no results for an exercise, record the gap and have the LLM revise the research plan with better aliases or broader evidence questions before generating a final card.
 - If direct variation evidence is sparse, use `exercise_family` and `movement_pattern` evidence as explicitly marked supplemental support.
 - Do not fill phases, muscle roles, load peaks, vector shifts, variations, alternatives, or programming fields from local movement templates.
 - If a field lacks direct evidence, fill it only by a documented analytical inference from suitable studies; otherwise keep it unresolved and record the limitation.

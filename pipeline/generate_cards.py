@@ -38,6 +38,13 @@ from movement_decomposition import (
     decomposition_summary,
     save_decomposition,
 )
+from research_plan import (
+    ResearchPlanError,
+    load_research_plan,
+    query_specs_for_backend,
+    require_query_specs,
+    research_plan_summary,
+)
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -357,12 +364,6 @@ QUERY_SCOPE_PRIORITIES = {
     "movement_pattern": 3,
 }
 
-QUERY_SCOPE_MATCH_CLASS = {
-    "specific_variation": "direct",
-    "exercise_family": "same_family",
-    "movement_pattern": "indirect",
-}
-
 EXERCISE_MATCH_RANK = {
     "direct": 0,
     "close_variation": 1,
@@ -391,84 +392,12 @@ def english_search_terms(entry: ExerciseEntry) -> list[str]:
     return unique_strings(english_candidates or candidates)
 
 
-def entry_query_text(entry: ExerciseEntry) -> str:
-    return normalize_title(" ".join([entry.exercise_name, *entry.aliases, entry.raw_name]))
+def build_pubmed_query_specs(entry: ExerciseEntry, research_plan: dict[str, Any]) -> list[dict[str, Any]]:
+    return require_query_specs(research_plan, entry, "pubmed")
 
 
-
-def build_search_term_tiers(entry: ExerciseEntry) -> list[dict[str, Any]]:
-    decomposition = build_movement_decomposition(entry).to_dict()
-    query_aliases = decomposition.get("query_aliases") or {}
-    tiers = []
-    seen: set[str] = set()
-    for scope in ["specific_variation", "exercise_family", "movement_pattern"]:
-        raw_terms = query_aliases.get(scope) or []
-        if scope == "specific_variation":
-            raw_terms = unique_strings([entry.raw_name, entry.exercise_name, *entry.aliases, *english_search_terms(entry), *raw_terms])
-        terms = []
-        for term in raw_terms:
-            key = normalize_title(term)
-            if key and key not in seen:
-                seen.add(key)
-                terms.append(term)
-        if terms:
-            tiers.append(
-                {
-                    "query_scope": scope,
-                    "priority": QUERY_SCOPE_PRIORITIES[scope],
-                    "match_class": QUERY_SCOPE_MATCH_CLASS[scope],
-                    "terms": terms,
-                    "movement_component_ids": [
-                        item.get("component_id")
-                        for item in decomposition.get("components", [])
-                        if isinstance(item, dict)
-                    ],
-                }
-            )
-    return tiers
-
-
-def build_pubmed_query_text(exercise_terms: list[str]) -> str:
-    quoted_terms = " OR ".join(f'"{term}"' for term in exercise_terms)
-    exercise_part = f"({quoted_terms})" if len(exercise_terms) > 1 else quoted_terms
-    return (
-        f"{exercise_part} AND "
-        '(biomechanics OR electromyography OR EMG OR kinematics OR kinetics '
-        'OR "muscle activation" OR "joint moment" OR technique OR '
-        '"range of motion" OR "resistance training")'
-    )
-
-
-def query_scope_rationale(scope: str) -> str:
-    rationales = {
-        "specific_variation": "Priority 1: exact exercise variation and technique terms.",
-        "exercise_family": "Priority 2: same exercise family when exact-variation evidence is limited.",
-        "movement_pattern": "Priority 3: broad movement-pattern evidence used only as indirect support.",
-    }
-    return rationales[scope]
-
-
-def build_pubmed_query_specs(entry: ExerciseEntry) -> list[dict[str, Any]]:
-    specs = []
-    for tier in build_search_term_tiers(entry):
-        scope = tier["query_scope"]
-        specs.append(
-            {
-                "query_id": f"{scope}_pubmed_core",
-                "query_scope": scope,
-                "priority": tier["priority"],
-                "match_class": tier["match_class"],
-                "term_set": tier["terms"],
-                "movement_component_ids": tier.get("movement_component_ids") or [],
-                "query": build_pubmed_query_text(tier["terms"]),
-                "rationale": query_scope_rationale(scope),
-            }
-        )
-    return specs
-
-
-def build_pubmed_queries(entry: ExerciseEntry) -> list[str]:
-    return [spec["query"] for spec in build_pubmed_query_specs(entry)]
+def build_pubmed_queries(entry: ExerciseEntry, research_plan: dict[str, Any]) -> list[str]:
+    return [spec["query"] for spec in query_specs_for_backend(research_plan, entry, "pubmed")]
 
 
 def query_matches_metadata(matches: list[dict[str, Any]]) -> dict[str, Any]:
@@ -500,9 +429,20 @@ def query_matches_metadata(matches: list[dict[str, Any]]) -> dict[str, Any]:
                     if match.get("movement_component_ids")
                     else {}
                 ),
+                **(
+                    {"research_question_ids": match.get("research_question_ids")}
+                    if match.get("research_question_ids")
+                    else {}
+                ),
+                **(
+                    {"intended_card_fields": match.get("intended_card_fields")}
+                    if match.get("intended_card_fields")
+                    else {}
+                ),
                 **({"query": query} if query else {}),
                 **({"match_source": match.get("match_source")} if match.get("match_source") else {}),
                 **({"term_matches": match.get("term_matches")} if match.get("term_matches") else {}),
+                **({"rationale": match.get("rationale")} if match.get("rationale") else {}),
             }
         )
 
@@ -676,12 +616,33 @@ def guess_evidence_domains(text: str) -> list[str]:
     return domains or ["unclear"]
 
 
+def match_class_from_query_matches(matches: list[dict[str, Any]]) -> str | None:
+    candidates = []
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        match_class = match.get("match_class")
+        if match_class not in EXERCISE_MATCH_RANK:
+            continue
+        try:
+            priority = int(match.get("priority") or 99)
+        except (TypeError, ValueError):
+            priority = 99
+        candidates.append((priority, EXERCISE_MATCH_RANK[match_class], match_class))
+    if not candidates:
+        return None
+    return sorted(candidates)[0][2]
+
+
 def classify_exercise_match(source: dict[str, Any], entry: ExerciseEntry) -> str:
+    match_from_query = match_class_from_query_matches(source.get("query_matches") or [])
+    if match_from_query:
+        return match_from_query
+
     haystack = normalize_title(" ".join([source.get("title") or "", source.get("abstract") or ""]))
-    for tier in build_search_term_tiers(entry):
-        normalized_terms = [normalize_title(term) for term in tier["terms"] if term]
-        if any(contains_normalized_phrase(haystack, term) for term in normalized_terms):
-            return tier["match_class"]
+    normalized_terms = [normalize_title(term) for term in english_search_terms(entry)]
+    if any(contains_normalized_phrase(haystack, term) for term in normalized_terms):
+        return "direct"
     return "unclear"
 
 
@@ -695,9 +656,14 @@ def contains_normalized_phrase(haystack: str, phrase: str) -> bool:
     return re.search(rf"(^|\s){re.escape(phrase)}($|\s)", haystack) is not None
 
 
-def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+def run_ncbi_source_branch(
+    entry: ExerciseEntry,
+    log_dir: Path,
+    retmax: int,
+    research_plan: dict[str, Any],
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     client = NcbiEntrezClient(log_dir=log_dir)
-    query_specs = build_pubmed_query_specs(entry)
+    query_specs = build_pubmed_query_specs(entry, research_plan)
     pmids: list[str] = []
     pmid_query_matches: dict[str, list[dict[str, Any]]] = {}
     for spec in query_specs:
@@ -713,7 +679,10 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
                     "match_class": spec.get("match_class"),
                     "term_set": spec.get("term_set"),
                     "movement_component_ids": spec.get("movement_component_ids") or [],
+                    "research_question_ids": spec.get("research_question_ids") or [],
+                    "intended_card_fields": spec.get("intended_card_fields") or [],
                     "query": query,
+                    "rationale": spec.get("rationale") or "",
                 }
             )
 
@@ -724,7 +693,7 @@ def run_ncbi_source_branch(entry: ExerciseEntry, log_dir: Path, retmax: int) -> 
         "backend_display": LIFE_SCIENCE_BACKEND_DISPLAY,
         "script_path": str(client.script_path),
         "status": "ok",
-        "query_strategy": "tiered_specific_then_family_then_pattern",
+        "query_strategy": "llm_dynamic_research_plan",
         "query_specs": query_specs,
         "queries_used": [spec["query"] for spec in query_specs],
         "pmids": pmids,
@@ -1331,12 +1300,14 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
     cards_dir = resolve_project_path(args.cards_dir)
     sources_dir = resolve_project_path(args.sources_dir)
     logs_dir = resolve_project_path(args.logs_dir)
+    research_plan = args.research_plan_data
     log_dir = logs_dir / entry.exercise_id
     log_dir.mkdir(parents=True, exist_ok=True)
     decomposition = build_movement_decomposition(entry)
     decomposition_path = logs_dir / f"{entry.exercise_id}.movement_decomposition.json"
     save_decomposition(decomposition_path, decomposition)
     decomposition_info = decomposition_summary(decomposition)
+    research_info = research_plan_summary(research_plan, entry)
 
     sources: list[dict[str, Any]] = []
     backend_logs = []
@@ -1354,7 +1325,12 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         )
 
     try:
-        ncbi_sources, ncbi_log = run_ncbi_source_branch(entry, log_dir=log_dir, retmax=args.retmax)
+        ncbi_sources, ncbi_log = run_ncbi_source_branch(
+            entry,
+            log_dir=log_dir,
+            retmax=args.retmax,
+            research_plan=research_plan,
+        )
         sources.extend(ncbi_sources)
         backend_logs.append(ncbi_log)
     except Exception as exc:
@@ -1366,7 +1342,7 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
                 "backend_display": LIFE_SCIENCE_BACKEND_DISPLAY,
                 "status": "error",
                 "error": str(exc),
-                "queries_used": build_pubmed_queries(entry),
+                "queries_used": build_pubmed_queries(entry, research_plan),
             }
         )
         raise PipelineError(f"NCBI/PubMed source branch failed for {entry.exercise_id}: {exc}") from exc
@@ -1388,6 +1364,7 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
             "path": str(decomposition_path),
             "summary": decomposition_info,
         },
+        "research_plan": research_info,
         "search_backends": backend_logs,
         "sources": merged_sources,
     }
@@ -1398,6 +1375,7 @@ def process_exercise(entry: ExerciseEntry, args: argparse.Namespace) -> dict[str
         "sources_path": str(sources_dir / f"{entry.exercise_id}.sources.json"),
         "movement_decomposition_path": str(decomposition_path),
         "movement_decomposition_summary": decomposition_info,
+        "research_plan": research_info,
         "source_count": len(merged_sources),
         "validation": "skipped" if args.no_validate else "passed",
         "backend_logs": backend_logs,
@@ -1417,6 +1395,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sources-dir", type=Path, default=Path("output") / "sources", help="Directory for generated source ledgers.")
     parser.add_argument("--logs-dir", type=Path, default=Path("output") / "logs", help="Directory for generation logs.")
     parser.add_argument("--report-path", type=Path, help="Generation report path. Defaults to <logs-dir>/generation_report.json.")
+    parser.add_argument(
+        "--research-plan",
+        type=Path,
+        required=True,
+        help="LLM-authored research plan JSON. Search queries are not generated from local templates.",
+    )
     parser.add_argument(
         "--amass-json",
         type=Path,
@@ -1453,6 +1437,12 @@ def main(argv: list[str] | None = None) -> int:
     exercises = load_exercises(input_file)
     if not exercises:
         parser.error(f"No exercises found in input file: {input_file}")
+
+    research_plan_path = resolve_project_path(args.research_plan)
+    try:
+        args.research_plan_data = load_research_plan(research_plan_path)
+    except ResearchPlanError as exc:
+        parser.error(str(exc))
 
     logs = []
     for entry in exercises:

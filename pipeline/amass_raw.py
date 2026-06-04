@@ -97,6 +97,8 @@ def iter_plan_items(
                     "tool": query.get("tool"),
                     "parameters": params,
                     "query": params.get("query"),
+                    "research_question_ids": query.get("research_question_ids") or [],
+                    "intended_card_fields": query.get("intended_card_fields") or [],
                     "rationale": query.get("rationale"),
                 }
             )
@@ -238,6 +240,8 @@ def command_save(args: argparse.Namespace) -> int:
         "match_class": query_item.get("match_class"),
         "tool": query_item.get("tool"),
         "parameters": query_item.get("parameters"),
+        "research_question_ids": query_item.get("research_question_ids") or [],
+        "intended_card_fields": query_item.get("intended_card_fields") or [],
         "raw_path": str(raw_path),
         "sha256": sha256_bytes(data),
         "bytes": len(data),
